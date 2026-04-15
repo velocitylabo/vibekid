@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI おしゃべりひろば</title>
+  <meta name="description" content="クラウド不要・アカウント不要。Chrome に内蔵された AI とおしゃべりできる、こども向けチャットアプリ。">
+
+  <!-- OGP -->
+  <meta property="og:title" content="AI おしゃべりひろば">
+  <meta property="og:description" content="こどもの はじめての AI ともだち。クラウド不要・アカウント不要・完全オフラインで安心。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://velocitylabo.github.io/vibekid/">
+  <meta property="og:image" content="https://velocitylabo.github.io/vibekid/ogp.svg">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:site_name" content="AI おしゃべりひろば">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="AI おしゃべりひろば">
+  <meta name="twitter:description" content="こどもの はじめての AI ともだち。クラウド不要・アカウント不要・完全オフラインで安心。">
+  <meta name="twitter:image" content="https://velocitylabo.github.io/vibekid/ogp.svg">
+
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <meta name="theme-color" content="#ff80ab">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+</head>
+<body>
+  <div class="chat-container" x-data="chatApp" x-cloak>
+    <header class="chat-header">
+      <div class="header-character">
+        <div :class="mascotClass" aria-hidden="true">
+          <div class="mascot-face">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth"></div>
+          </div>
+        </div>
+        <div class="header-text">
+          <h1>AI おしゃべりひろば</h1>
+          <div :class="statusClass" x-text="statusText">じゅんびちゅう...</div>
+        </div>
+        <button class="theme-toggle" @click="toggleTheme()" :title="isDark ? 'ひるモードに する' : 'よるモードに する'">
+          <template x-if="isDark">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          </template>
+          <template x-if="!isDark">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </template>
+        </button>
+        <button
+          class="header-icon-button costume-button"
+          @click="openCostumePanel()"
+          title="きせかえ"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.38 3.46L16 2 12 5.5 8 2 3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6l1 8h10l1-8h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
+          </svg>
+        </button>
+      </div>
+      <button
+        class="header-icon-button theme-button"
+        @click="openThemeSelector()"
+        :title="currentTheme.name"
+      >
+        <span class="theme-button-icon" x-text="currentTheme.icon"></span>
+      </button>
+      <button
+        class="header-icon-button"
+        @click="openParentalSettings()"
+        title="ほごしゃ せってい"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </button>
+      <button
+        class="header-icon-button dashboard-button"
+        @click="openDashboard()"
+        title="ほごしゃ ダッシュボード"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="4" rx="1"/>
+          <rect x="14" y="10" width="7" height="7" rx="1"/>
+          <rect x="3" y="13" width="7" height="4" rx="1"/>
+        </svg>
+      </button>
+      <button
+        class="header-icon-button profile-button"
+        x-show="premiumUnlocked"
+        @click="openProfileManager()"
+        :title="'プロファイル: ' + activeProfile.name"
+      >
+        <span class="profile-button-icon" x-text="activeProfileIcon"></span>
+      </button>
+      <button
+        class="header-icon-button migration-button"
+        @click="openMigration()"
+        title="データの いこう"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </button>
+      <button
+        class="header-icon-button stamp-button"
+        @click="openStampCollection()"
+        title="スタンプ"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        <span class="stamp-badge" x-show="stampEarnedCount > 0" x-text="stampEarnedCount"></span>
+      </button>
+      <button
+        class="header-icon-button pack-store-button"
+        @click="openPackStore()"
+        title="コンテンツパック"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+          <line x1="12" y1="22.08" x2="12" y2="12"/>
+        </svg>
+      </button>
+      <button
+        class="header-icon-button store-button"
+        @click="openStore()"
+        title="コンテンツストア"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <path d="M16 10a4 4 0 0 1-8 0"/>
+        </svg>
+      </button>
+      <button
+        class="header-icon-button clear-history-button"
+        x-show="messages.length > 0"
+        @click="showClearConfirm = true"
+        title="りれきを けす"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Clear history confirmation overlay -->
+    <div class="overlay" x-show="showClearConfirm" x-transition>
+      <div class="overlay-card clear-card">
+        <h2>りれきを けしてもいい？</h2>
+        <p class="overlay-sub">いままでの おはなしが ぜんぶ きえるよ</p>
+        <div class="clear-confirm-buttons">
+          <button class="clear-cancel-button" @click="showClearConfirm = false">やめる</button>
+          <button class="clear-ok-button" @click="clearHistory()">けす</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Theme selector overlay -->
+    <div class="overlay" x-show="showThemeSelector" x-transition @click.self="showThemeSelector = false">
+      <div class="overlay-card theme-selector-card">
+        <div class="theme-selector-header">
+          <h2>テーマを えらぼう</h2>
+          <button class="dashboard-close" @click="showThemeSelector = false">&times;</button>
+        </div>
+        <div class="theme-grid">
+          <template x-for="t in conversationThemes" :key="t.id">
+            <button
+              class="theme-card"
+              :class="{ active: currentThemeId === t.id, locked: !t.free }"
+              :disabled="!t.free"
+              @click="selectTheme(t.id)"
+            >
+              <span class="theme-card-icon" x-text="t.icon"></span>
+              <span class="theme-card-name" x-text="t.name"></span>
+              <span class="theme-card-desc" x-text="t.description"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Costume (kisekae) panel overlay -->
+    <div class="overlay" x-show="showCostumePanel" x-transition @click.self="closeCostumePanel()">
+      <div class="overlay-card costume-card">
+        <div class="costume-header">
+          <h2>きせかえ</h2>
+          <button class="costume-close" @click="closeCostumePanel()">&times;</button>
+        </div>
+        <p class="overlay-sub">マスコットの みためを かえよう！</p>
+        <div class="costume-grid">
+          <template x-for="costume in costumeItems" :key="costume.id">
+            <button
+              class="costume-item"
+              :class="{ selected: selectedCostume === costume.id, locked: !costume.free }"
+              :disabled="!costume.free"
+              @click="selectCostume(costume.id)"
+            >
+              <span class="costume-icon" x-text="costume.icon"></span>
+              <span class="costume-name" x-text="costume.name"></span>
+              <span class="costume-lock" x-show="!costume.free">🔒</span>
+              <span class="costume-check" x-show="selectedCostume === costume.id">✓</span>
+            </button>
+          </template>
+        </div>
+        <p class="costume-hint" x-show="costumeItems.some(c => !c.free)">🔒 のアイテムは じゅんびちゅう だよ</p>
+      </div>
+    </div>
+
+    <!-- PIN overlay -->
+    <div class="overlay" x-show="showPinOverlay" x-transition>
+      <div class="overlay-card pin-card">
+        <div class="overlay-mascot pin-mascot" aria-hidden="true">
+          <div class="mascot-face large">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth"></div>
+          </div>
+        </div>
+        <template x-if="pinMode === 'setup'">
+          <div>
+            <h2>PINを きめてね</h2>
+            <p class="overlay-sub">ほごしゃの かたが 4けたの すうじを いれてね</p>
+          </div>
+        </template>
+        <template x-if="pinMode === 'confirm' || (pinMode === 'change' && _pinChangeStep === 'confirm')">
+          <div>
+            <h2>もういちど いれてね</h2>
+            <p class="overlay-sub">おなじ PINを いれてね</p>
+          </div>
+        </template>
+        <template x-if="pinMode === 'verify'">
+          <div>
+            <h2>PINを いれてね</h2>
+            <p class="overlay-sub">ほごしゃの かただけ つかえるよ</p>
+          </div>
+        </template>
+        <template x-if="pinMode === 'change' && !_pinChangeStep">
+          <div>
+            <h2>あたらしい PINを いれてね</h2>
+            <p class="overlay-sub">4けたの すうじを いれてね</p>
+          </div>
+        </template>
+        <div class="pin-input-group">
+          <template x-if="!(pinMode === 'confirm' || (pinMode === 'change' && _pinChangeStep === 'confirm'))">
+            <div class="pin-digits" x-ref="pinDigitsContainer">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput0" :value="pinDigits[0]" :disabled="pinLocked" @input="handlePinInput(0, $event)" @keydown="handlePinKeydown(0, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput1" :value="pinDigits[1]" :disabled="pinLocked" @input="handlePinInput(1, $event)" @keydown="handlePinKeydown(1, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput2" :value="pinDigits[2]" :disabled="pinLocked" @input="handlePinInput(2, $event)" @keydown="handlePinKeydown(2, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput3" :value="pinDigits[3]" :disabled="pinLocked" @input="handlePinInput(3, $event)" @keydown="handlePinKeydown(3, $event)">
+            </div>
+          </template>
+          <template x-if="pinMode === 'confirm' || (pinMode === 'change' && _pinChangeStep === 'confirm')">
+            <div class="pin-digits" x-ref="pinConfirmContainer">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput0" :value="pinConfirmDigits[0]" @input="handlePinInput(0, $event)" @keydown="handlePinKeydown(0, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput1" :value="pinConfirmDigits[1]" @input="handlePinInput(1, $event)" @keydown="handlePinKeydown(1, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput2" :value="pinConfirmDigits[2]" @input="handlePinInput(2, $event)" @keydown="handlePinKeydown(2, $event)">
+              <input type="tel" maxlength="1" inputmode="numeric" class="pin-digit" x-ref="pinInput3" :value="pinConfirmDigits[3]" @input="handlePinInput(3, $event)" @keydown="handlePinKeydown(3, $event)">
+            </div>
+          </template>
+        </div>
+        <p class="pin-error" x-show="pinError" x-text="pinError"></p>
+        <div class="pin-actions">
+          <button class="pin-cancel-button" @click="closePinOverlay()">とじる</button>
+          <template x-if="_parentalUnlocked && pinSetup && pinMode === 'verify'">
+            <button class="pin-change-button" @click="pinMode = 'change'; _pinChangeStep = null; pinDigits = ['','','','']; pinError = ''; $nextTick(() => _focusPinInput(0))">PIN を かえる</button>
+          </template>
+        </div>
+        <template x-if="pinMode === 'verify'">
+          <details class="pin-reset-details">
+            <summary>PINを わすれた かたへ</summary>
+            <p>ブラウザの localStorage をクリアすると PIN がリセットされます。</p>
+            <button class="pin-reset-button" @click="resetPin()">PINを リセット</button>
+          </details>
+        </template>
+      </div>
+    </div>
+
+    <!-- Dashboard overlay -->
+    <div class="overlay" x-show="showDashboard" x-transition @click.self="closeDashboard()">
+      <div class="overlay-card dashboard-card">
+        <div class="dashboard-header">
+          <h2>ほごしゃ ダッシュボード</h2>
+          <button class="dashboard-close" @click="closeDashboard()">&times;</button>
+        </div>
+        <template x-if="dashboardData">
+          <div class="dashboard-content">
+            <!-- Profile badge (premium only) -->
+            <div class="dashboard-profile-badge" x-show="premiumUnlocked">
+              <span class="dashboard-profile-badge-icon" x-text="activeProfileIcon"></span>
+              <span class="dashboard-profile-badge-name" x-text="dashboardData.activeProfile && dashboardData.activeProfile.name"></span>
+            </div>
+            <div class="dashboard-summary">
+              <div class="dashboard-stat">
+                <div class="dashboard-stat-value" x-text="dashboardData.totalMinutes + 'ぷん'"></div>
+                <div class="dashboard-stat-label">そうりようじかん</div>
+              </div>
+              <div class="dashboard-stat">
+                <div class="dashboard-stat-value" x-text="dashboardData.sessionCount + 'かい'"></div>
+                <div class="dashboard-stat-label">りようかいすう</div>
+              </div>
+              <div class="dashboard-stat">
+                <div class="dashboard-stat-value" x-text="dashboardData.stampCount + '/' + dashboardData.stampTotal"></div>
+                <div class="dashboard-stat-label">スタンプ</div>
+              </div>
+            </div>
+            <!-- Premium extra stats -->
+            <template x-if="premiumUnlocked">
+              <div class="dashboard-premium-stats">
+                <div class="dashboard-stat">
+                  <div class="dashboard-stat-value" x-text="dashboardData.averageDailyMinutes + 'ぷん'"></div>
+                  <div class="dashboard-stat-label">にちへいきん</div>
+                </div>
+                <div class="dashboard-stat">
+                  <div class="dashboard-stat-value" x-text="dashboardData.longestSession + 'ぷん'"></div>
+                  <div class="dashboard-stat-label">さいちょうせっしょん</div>
+                </div>
+              </div>
+            </template>
+            <div class="dashboard-section">
+              <h3>このいっしゅうかん</h3>
+              <!-- View toggle (premium only) -->
+              <template x-if="premiumUnlocked">
+                <div class="dashboard-view-toggle">
+                  <button class="dashboard-view-btn" :class="{ active: dashboardView === 'daily' }" @click="dashboardView = 'daily'">にち</button>
+                  <button class="dashboard-view-btn" :class="{ active: dashboardView === 'weekly' }" @click="dashboardView = 'weekly'">しゅう</button>
+                </div>
+              </template>
+              <!-- Daily chart -->
+              <div class="dashboard-chart" x-show="!premiumUnlocked || dashboardView === 'daily'">
+                <template x-for="day in dashboardData.dailyUsage" :key="day.date">
+                  <div class="dashboard-bar-col">
+                    <div class="dashboard-bar-value" x-text="day.minutes > 0 ? day.minutes : ''"></div>
+                    <div class="dashboard-bar" :style="'height: ' + Math.min(day.minutes * 2, 80) + 'px'"></div>
+                    <div class="dashboard-bar-label" x-text="day.dayLabel"></div>
+                  </div>
+                </template>
+              </div>
+              <!-- Weekly chart (premium only) -->
+              <template x-if="premiumUnlocked">
+                <div class="dashboard-chart" x-show="dashboardView === 'weekly'">
+                  <template x-for="week in dashboardData.weeklyUsage" :key="week.label">
+                    <div class="dashboard-bar-col">
+                      <div class="dashboard-bar-value" x-text="week.minutes > 0 ? week.minutes : ''"></div>
+                      <div class="dashboard-bar" :style="'height: ' + Math.min(week.minutes * 1.5, 80) + 'px'"></div>
+                      <div class="dashboard-bar-label" x-text="week.label"></div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+            <div class="dashboard-section" x-show="dashboardData.topics.length > 0">
+              <h3>はなしたトピック</h3>
+              <div class="dashboard-topics">
+                <template x-for="topic in dashboardData.topics" :key="topic.word">
+                  <span class="dashboard-topic-chip" x-text="topic.word"></span>
+                </template>
+              </div>
+            </div>
+            <!-- Premium upgrade prompt (non-premium users) -->
+            <div class="dashboard-premium-prompt" x-show="!premiumUnlocked">
+              <p>プレミアムで週間グラフ・詳細統計・複数プロファイルが使えます</p>
+              <button class="dashboard-premium-btn" @click="togglePremium()">プレミアムを試す</button>
+            </div>
+            <!-- Premium active indicator -->
+            <div class="dashboard-premium-active" x-show="premiumUnlocked">
+              プレミアム有効 — <button style="background:none;border:none;color:#e53935;font-size:0.75rem;cursor:pointer;padding:0;" @click="togglePremium()">解除</button>
+            </div>
+            <p class="dashboard-privacy">すべてのデータは このデバイスにだけ ほぞんされています</p>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Profile manager overlay (premium) -->
+    <div class="overlay" x-show="showProfileManager" x-transition @click.self="closeProfileManager()">
+      <div class="overlay-card profile-manager-card">
+        <div class="dashboard-header">
+          <h2>プロファイルかんり</h2>
+          <button class="dashboard-close" @click="closeProfileManager()">&times;</button>
+        </div>
+        <template x-if="!showProfileForm">
+          <div class="profile-list">
+            <template x-for="profile in profiles" :key="profile.id">
+              <div class="profile-item" :class="{ active: profile.id === activeProfileId }">
+                <button class="profile-select-button" @click="switchProfile(profile.id)">
+                  <span class="profile-icon" x-text="PROFILE_ICONS.find(i => i.id === profile.icon)?.emoji || '\uD83D\uDC3B'"></span>
+                  <span class="profile-name" x-text="profile.name"></span>
+                  <span class="profile-age" x-show="profile.age" x-text="profile.age + 'さい'"></span>
+                </button>
+                <button class="profile-edit-button" @click="openProfileForm(profile)" title="へんしゅう">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
+              </div>
+            </template>
+            <button class="profile-add-button" x-show="profiles.length < MAX_PROFILES" @click="openProfileForm(null)">
+              + ついか
+            </button>
+          </div>
+        </template>
+        <template x-if="showProfileForm">
+          <div class="profile-form">
+            <h3 x-text="editingProfile ? 'プロファイルへんしゅう' : 'あたらしいプロファイル'"></h3>
+            <div class="profile-form-field">
+              <label>なまえ</label>
+              <input type="text" x-model="profileForm.name" maxlength="10" placeholder="なまえ">
+            </div>
+            <div class="profile-form-field">
+              <label>アイコン</label>
+              <div class="profile-icon-picker">
+                <template x-for="icon in PROFILE_ICONS" :key="icon.id">
+                  <button class="profile-icon-option" :class="{ active: profileForm.icon === icon.id }" @click="profileForm.icon = icon.id" x-text="icon.emoji"></button>
+                </template>
+              </div>
+            </div>
+            <div class="profile-form-field">
+              <label>ねんれい</label>
+              <input type="number" x-model="profileForm.age" min="1" max="18" placeholder="ねんれい">
+            </div>
+            <div class="profile-form-actions">
+              <button class="pin-cancel-button" @click="showProfileForm = false">もどる</button>
+              <button class="setup-next-button" @click="saveProfile()">ほぞん</button>
+            </div>
+            <button class="profile-delete-button" x-show="editingProfile && editingProfile !== 'default'" @click="deleteProfile(editingProfile); showProfileForm = false">このプロファイルを けす</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Migration overlay -->
+    <div class="overlay" x-show="showMigrationOverlay" x-transition @click.self="closeMigration()">
+      <div class="overlay-card migration-card">
+        <div class="dashboard-header">
+          <h2>データの いこう</h2>
+          <button class="dashboard-close" @click="closeMigration()">&times;</button>
+        </div>
+        <div class="migration-content">
+          <p class="migration-description">おはなしの りれきや せっていを ファイルに ほぞんしたり、ファイルから もとにもどしたり できるよ</p>
+
+          <div class="migration-section">
+            <h3>エクスポート（ほぞん）</h3>
+            <p class="migration-hint">いまの データを ファイルに ほぞんするよ</p>
+            <button class="migration-action-button export-button" @click="exportData()">ファイルに ほぞん</button>
+          </div>
+
+          <div class="migration-section">
+            <h3>インポート（もどす）</h3>
+            <p class="migration-hint">ほぞんした ファイルから データを もどすよ</p>
+            <p class="migration-warning">いまの データは うわがきされるよ</p>
+            <button class="migration-action-button import-button" @click="importData()">ファイルから もどす</button>
+          </div>
+
+          <p class="migration-status" x-show="migrationStatus" x-text="migrationStatus"></p>
+          <p class="migration-error" x-show="migrationError" x-text="migrationError"></p>
+          <p class="migration-privacy">エクスポートした ファイルは このデバイスに ほぞんされます</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Learning mode selection overlay -->
+    <div class="overlay" x-show="showLearningSelect" x-transition @click.self="closeLearningSelect()">
+      <div class="overlay-card learning-select-card">
+        <div class="dashboard-header">
+          <h2>がくしゅうモード</h2>
+          <button class="dashboard-close" @click="closeLearningSelect()">&times;</button>
+        </div>
+        <div class="learning-select-content">
+          <template x-if="!learningCategory">
+            <div>
+              <p class="learning-select-label">なにを べんきょうする？</p>
+              <div class="learning-category-grid">
+                <template x-for="cat in learningCategories" :key="cat.id">
+                  <button class="learning-category-card" @click="selectLearningCategory(cat.id)">
+                    <span class="learning-category-icon" x-text="cat.icon"></span>
+                    <span class="learning-category-label" x-text="cat.label"></span>
+                    <span class="learning-category-progress" x-text="getLearningProgressFor(cat.id)"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+          <template x-if="learningCategory && !learningLevel">
+            <div>
+              <p class="learning-select-label">むずかしさを えらんでね</p>
+              <div class="learning-level-grid">
+                <template x-for="lv in learningLevels" :key="lv.id">
+                  <button class="learning-level-card" @click="startLearningMode(lv.id)">
+                    <span class="learning-level-icon" x-text="lv.icon"></span>
+                    <span class="learning-level-label" x-text="lv.label"></span>
+                  </button>
+                </template>
+              </div>
+              <button class="learning-back-button" @click="learningCategory = null">もどる</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment confirmation overlay -->
+    <div class="overlay" x-show="showPaymentOverlay" x-transition @click.self="cancelPurchase()">
+      <div class="overlay-card payment-card">
+        <div class="dashboard-header">
+          <h2>こうにゅう かくにん</h2>
+          <button class="dashboard-close" @click="cancelPurchase()">&times;</button>
+        </div>
+        <div class="payment-content">
+          <template x-if="paymentStep === 'confirm' && paymentItem">
+            <div>
+              <div class="payment-item-info">
+                <span class="payment-item-icon" x-text="paymentItem.icon || '&#x1F381;'"></span>
+                <div>
+                  <p class="payment-item-name" x-text="paymentItem.name"></p>
+                  <p class="payment-item-desc" x-text="paymentItem.description || ''"></p>
+                </div>
+              </div>
+              <div class="payment-price">
+                <span class="payment-price-label">おねだん:</span>
+                <span class="payment-price-value" x-text="paymentItem.priceLabel || ('\u00A5' + (paymentItem.price || 0))"></span>
+              </div>
+              <p class="payment-privacy-note">けっさいの じょうほうだけ そうしんされます。かいわの データは おくりません。</p>
+              <div class="payment-actions">
+                <button class="payment-cancel-button" @click="cancelPurchase()">やめる</button>
+                <button class="payment-confirm-button" @click="confirmPurchase()">こうにゅうする</button>
+              </div>
+            </div>
+          </template>
+          <template x-if="paymentStep === 'processing'">
+            <div class="payment-processing">
+              <div class="payment-spinner"></div>
+              <p>けっさい しょりちゅう...</p>
+            </div>
+          </template>
+          <template x-if="paymentStep === 'success'">
+            <div class="payment-success">
+              <span class="payment-success-icon">&#x2705;</span>
+              <p>こうにゅう できたよ！</p>
+              <button class="payment-done-button" @click="closePurchaseSuccess()">とじる</button>
+            </div>
+          </template>
+          <template x-if="paymentStep === 'error'">
+            <div class="payment-error-state">
+              <span class="payment-error-icon">&#x26A0;&#xFE0F;</span>
+              <p class="payment-error-message" x-text="paymentError"></p>
+              <div class="payment-actions">
+                <button class="payment-cancel-button" @click="cancelPurchase()">とじる</button>
+                <button class="payment-confirm-button" @click="confirmPurchase()">もういちど ためす</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stamp collection overlay -->
+    <div class="overlay" x-show="showStampCollection" x-transition @click.self="closeStampCollection()">
+      <div class="overlay-card stamp-collection-card">
+        <div class="dashboard-header">
+          <h2>スタンプ コレクション</h2>
+          <button class="dashboard-close" @click="closeStampCollection()">&times;</button>
+        </div>
+        <p class="stamp-collection-sub" x-text="stampEarnedCount + ' / ' + stamps.length + ' こ あつめたよ'"></p>
+        <div class="stamp-grid">
+          <template x-for="stamp in stamps" :key="stamp.id">
+            <div class="stamp-item" :class="{ earned: isStampEarned(stamp.id) }">
+              <div class="stamp-icon" x-text="isStampEarned(stamp.id) ? stamp.icon : '?'"></div>
+              <div class="stamp-name" x-text="isStampEarned(stamp.id) ? stamp.name : '???'"></div>
+              <div class="stamp-desc" x-show="isStampEarned(stamp.id)" x-text="stamp.description"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Restore purchases overlay -->
+    <div class="overlay" x-show="showRestoreOverlay" x-transition @click.self="closeRestorePurchases()">
+      <div class="overlay-card restore-card">
+        <div class="dashboard-header">
+          <h2>こうにゅうの ふっき</h2>
+          <button class="dashboard-close" @click="closeRestorePurchases()">&times;</button>
+        </div>
+        <div class="restore-content">
+          <p class="restore-description">まえに こうにゅうした コンテンツを ふっきするよ</p>
+          <button class="payment-confirm-button restore-button" @click="restorePurchases()">ふっきする</button>
+          <p class="restore-status" x-show="restoreStatus" x-text="restoreStatus"></p>
+          <p class="restore-error" x-show="restoreError" x-text="restoreError"></p>
+          <p class="payment-privacy-note">けっさいサービスに かくにん します。かいわの データは おくりません。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stamp earned notification -->
+    <div class="stamp-earned-notification" x-show="showStampEarned" x-transition @click="dismissStampEarned()">
+      <div class="stamp-earned-icon" x-text="earnedStampIcon"></div>
+      <div class="stamp-earned-text">
+        <div class="stamp-earned-label">スタンプ ゲット!</div>
+        <div class="stamp-earned-name" x-text="earnedStampName"></div>
+      </div>
+    </div>
+
+    <!-- Store overlay -->
+    <div class="overlay" x-show="showStore" x-transition @click.self="closeStore()">
+      <div class="overlay-card store-card">
+        <div class="store-header">
+          <h2>コンテンツストア</h2>
+          <button class="store-close" @click="closeStore()">&times;</button>
+        </div>
+        <div class="store-tabs">
+          <button class="store-tab" :class="{ active: storeTab === 'packs' }" @click="setStoreTab('packs')">コンテンツパック</button>
+          <button class="store-tab" :class="{ active: storeTab === 'kisekae' }" @click="setStoreTab('kisekae')">きせかえ</button>
+        </div>
+        <div class="store-items">
+          <template x-for="item in storeItems" :key="item.id">
+            <div class="store-item" :class="{ purchased: isPurchased(item.id) }">
+              <div class="store-item-icon" x-text="item.icon"></div>
+              <div class="store-item-info">
+                <div class="store-item-name" x-text="item.name"></div>
+                <div class="store-item-desc" x-text="item.description"></div>
+                <template x-if="item.preview">
+                  <ul class="store-item-preview">
+                    <template x-for="p in item.preview" :key="p">
+                      <li x-text="p"></li>
+                    </template>
+                  </ul>
+                </template>
+              </div>
+              <div class="store-item-action">
+                <template x-if="isPurchased(item.id)">
+                  <span class="store-purchased-badge">こうにゅうずみ</span>
+                </template>
+                <template x-if="!isPurchased(item.id)">
+                  <button class="store-buy-button" @click="startPurchase(item)">
+                    <span class="store-price" x-text="'\u00A5' + item.price"></span>
+                    <span class="store-buy-label">かう</span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+        <p class="store-note">おかいものは ほごしゃの かたと いっしょにしてね</p>
+      </div>
+    </div>
+
+    <!-- Setup guide wizard overlay -->
+    <div class="overlay" x-show="showSetupOverlay" x-transition>
+      <div class="overlay-card setup-card">
+        <div class="overlay-mascot" aria-hidden="true">
+          <div class="mascot-face large">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth"></div>
+          </div>
+        </div>
+        <h2>まだ つかえないみたい...</h2>
+        <p class="overlay-sub">おとなのひとに このページを みせてね！</p>
+
+        <div class="setup-wizard">
+          <p class="setup-wizard-title">セットアップガイド（保護者の方へ）</p>
+          <div class="setup-steps">
+            <div class="setup-step" :class="{ active: setupStep === 1, done: setupStep > 1 }">
+              <div class="setup-step-number"><span x-show="setupStep <= 1">1</span><span x-show="setupStep > 1">&#10003;</span></div>
+              <div class="setup-step-content" x-show="setupStep === 1">
+                <h3>Chrome Canary をインストール</h3>
+                <p>Built-in AI は現在 <strong>Chrome Canary</strong>（開発版）でのみ利用できます。</p>
+                <p>Windows / macOS / Linux に対応しています。</p>
+                <p class="setup-step-note">※ Android は非対応です</p>
+                <div class="setup-step-actions">
+                  <button class="setup-next-button" @click="setupStep = 2">つぎへ</button>
+                </div>
+              </div>
+              <div class="setup-step-label" x-show="setupStep !== 1" @click="setupStep = 1">Chrome Canary をインストール</div>
+            </div>
+
+            <div class="setup-step" :class="{ active: setupStep === 2, done: setupStep > 2 }">
+              <div class="setup-step-number"><span x-show="setupStep <= 2">2</span><span x-show="setupStep > 2">&#10003;</span></div>
+              <div class="setup-step-content" x-show="setupStep === 2">
+                <h3>AI フラグを有効にする</h3>
+                <p>Chrome Canary のアドレスバーに以下を入力し、それぞれ有効にしてください。</p>
+                <div class="setup-flag-item">
+                  <code class="copyable" @click="$el.select?.();navigator.clipboard.writeText($el.textContent).then(()=>{$el.dataset.copied='true';setTimeout(()=>$el.dataset.copied='',1500)})">chrome://flags/#optimization-guide-on-device-model</code>
+                  <span class="setup-flag-value">Enabled BypassPerfRequirement</span>
+                </div>
+                <div class="setup-flag-item">
+                  <code class="copyable" @click="$el.select?.();navigator.clipboard.writeText($el.textContent).then(()=>{$el.dataset.copied='true';setTimeout(()=>$el.dataset.copied='',1500)})">chrome://flags/#prompt-api-for-gemini-nano</code>
+                  <span class="setup-flag-value">Enabled</span>
+                </div>
+                <p class="setup-step-note">コードをタップするとコピーできます</p>
+                <div class="setup-step-actions">
+                  <button class="setup-back-button" @click="setupStep = 1">もどる</button>
+                  <button class="setup-next-button" @click="setupStep = 3">つぎへ</button>
+                </div>
+              </div>
+              <div class="setup-step-label" x-show="setupStep !== 2" @click="setupStep = 2">AI フラグを有効にする</div>
+            </div>
+
+            <div class="setup-step" :class="{ active: setupStep === 3 }">
+              <div class="setup-step-number">3</div>
+              <div class="setup-step-content" x-show="setupStep === 3">
+                <h3>Chrome を再起動してこのページを開く</h3>
+                <p>フラグを変更したら Chrome を<strong>完全に閉じて</strong>から再度開いてください。</p>
+                <p>このページをもう一度開くと、AI モデルのダウンロードが始まります。</p>
+                <p class="setup-step-note">※ モデルのダウンロードにディスク空き容量が約 10GB 必要です</p>
+                <div class="setup-step-actions">
+                  <button class="setup-back-button" @click="setupStep = 2">もどる</button>
+                  <button class="setup-next-button" @click="location.reload()">ページをリロード</button>
+                </div>
+              </div>
+              <div class="setup-step-label" x-show="setupStep !== 3" @click="setupStep = 3">Chrome を再起動してこのページを開く</div>
+            </div>
+          </div>
+
+          <button class="setup-skip-button" @click="dismissSetupGuide()">とじる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Disk space warning overlay -->
+    <div class="overlay" x-show="showDiskOverlay" x-transition>
+      <div class="overlay-card disk-card">
+        <div class="overlay-mascot" aria-hidden="true">
+          <div class="mascot-face large">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth"></div>
+          </div>
+        </div>
+        <h2>ディスクの あきが たりないよ</h2>
+        <p class="overlay-sub">AIをつかうには やく<strong>10GB</strong>の あきが ひつようだよ</p>
+        <p class="disk-hint">おとなのひとに いらないファイルを けしてもらってね</p>
+        <p class="disk-hint-detail">ディスクの空き容量を確保してからページを再読み込みしてください</p>
+      </div>
+    </div>
+
+    <!-- Download progress overlay -->
+    <div class="overlay" x-show="showDownloadOverlay" x-transition>
+      <div class="overlay-card download-card">
+        <div class="overlay-mascot" aria-hidden="true">
+          <div class="mascot-face large">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth happy"></div>
+          </div>
+        </div>
+        <h2 x-text="downloadTitle">AI を ダウンロードするよ</h2>
+        <p class="overlay-sub" x-text="downloadSub">ボタンを おしてね！</p>
+        <button class="overlay-button" x-show="showDownloadButton" @click="startDownload()">ダウンロード かいし！</button>
+        <div x-show="showDownloadProgress">
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" :style="'width: ' + progressPercent + '%'"></div>
+          </div>
+          <div class="progress-text" x-text="progressPercent + '%'">0%</div>
+        </div>
+        <p class="download-note">はじめての ときだけだよ。つぎからは すぐ つかえるよ！</p>
+      </div>
+    </div>
+
+    <!-- Content pack store overlay -->
+    <div class="overlay" x-show="showPackStore" x-transition @click.self="closePackStore()">
+      <div class="overlay-card pack-store-card">
+        <div class="pack-store-header">
+          <h2>コンテンツパック</h2>
+          <button class="dashboard-close" @click="closePackStore()">&times;</button>
+        </div>
+
+        <div class="pack-store-section" x-show="installedPacks.length > 0">
+          <h3>インストールずみ</h3>
+          <div class="pack-grid">
+            <template x-for="pack in installedPacks" :key="pack.id">
+              <div class="pack-card" :class="{ active: activePackId === pack.id }">
+                <div class="pack-card-icon" x-text="pack.icon"></div>
+                <div class="pack-card-info">
+                  <div class="pack-card-name" x-text="pack.name"></div>
+                  <div class="pack-card-type" x-text="pack.type === 'learning' ? 'がくしゅう' : 'テーマ'"></div>
+                </div>
+                <div class="pack-card-actions">
+                  <button
+                    class="pack-activate-btn"
+                    :class="{ active: activePackId === pack.id }"
+                    @click="activatePack(pack.id)"
+                    x-text="activePackId === pack.id ? 'つかってるよ' : 'つかう'"
+                  ></button>
+                  <button class="pack-uninstall-btn" @click="uninstallPack(pack.id)">けす</button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="pack-store-section">
+          <h3>パックをさがす</h3>
+          <template x-if="packLoading">
+            <div class="pack-loading">よみこみちゅう...</div>
+          </template>
+          <template x-if="!packLoading && availablePacks.length === 0">
+            <div class="pack-empty">パックが みつからなかったよ</div>
+          </template>
+          <div class="pack-grid" x-show="!packLoading && availablePacks.length > 0">
+            <template x-for="pack in availablePacks" :key="pack.id">
+              <div class="pack-card">
+                <div class="pack-card-icon" x-text="pack.icon"></div>
+                <div class="pack-card-info">
+                  <div class="pack-card-name" x-text="pack.name"></div>
+                  <div class="pack-card-desc" x-text="pack.description"></div>
+                  <div class="pack-card-meta">
+                    <span class="pack-card-type" x-text="pack.type === 'learning' ? 'がくしゅう' : 'テーマ'"></span>
+                    <span class="pack-card-price" x-text="pack.free ? 'むりょう' : 'ゆうりょう'"></span>
+                  </div>
+                </div>
+                <div class="pack-card-actions">
+                  <template x-if="isPackInstalled(pack.id)">
+                    <button class="pack-installed-btn" disabled>インストールずみ</button>
+                  </template>
+                  <template x-if="!isPackInstalled(pack.id) && pack.free">
+                    <button class="pack-install-btn" @click="installPack(pack)">インストール</button>
+                  </template>
+                  <template x-if="!isPackInstalled(pack.id) && !pack.free">
+                    <button class="pack-install-btn" disabled>じゅんびちゅう</button>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="offline-banner" x-show="isOffline" x-transition>
+      オフラインだよ — インターネットなしで つかえるよ
+    </div>
+
+    <!-- Usage time reminder banner -->
+    <div class="reminder-banner" x-show="showReminder" x-transition>
+      <div class="reminder-content">
+        <span class="reminder-icon" aria-hidden="true">&#x1F319;</span>
+        <span class="reminder-text">そろそろ おやすみの じかんだよ</span>
+      </div>
+      <button class="reminder-dismiss" @click="dismissReminder()">わかった！</button>
+    </div>
+
+    <!-- Learning mode active bar -->
+    <div class="learning-bar" x-show="learningMode" x-transition>
+      <span class="learning-bar-label" x-text="learningCategoryLabel"></span>
+      <span class="learning-bar-level" x-text="learningLevelLabel"></span>
+      <button class="learning-bar-end" @click="endLearningMode()">おわる</button>
+    </div>
+
+    <main class="chat-messages" x-ref="chatMessages">
+      <div class="welcome-message" x-show="showWelcome">
+        <div class="welcome-mascot" aria-hidden="true">
+          <div class="mascot-face large">
+            <div class="mascot-eye left"></div>
+            <div class="mascot-eye right"></div>
+            <div class="mascot-mouth happy"></div>
+          </div>
+        </div>
+        <p class="welcome-text" x-text="currentThemeId === 'free' ? 'こんにちは！\nなんでも きいてね' : currentTheme.icon + ' ' + currentTheme.name + ' ！'"></p>
+        <div class="category-tabs">
+          <template x-for="cat in activeHintCategories" :key="cat.id">
+            <button
+              class="category-tab"
+              :class="{ active: selectedCategory === cat.id }"
+              @click="selectCategory(cat.id)"
+            ><span class="category-icon" x-text="cat.icon"></span><span x-text="cat.label"></span></button>
+          </template>
+        </div>
+        <div class="active-pack-hints" x-show="activePackId">
+          <div class="active-pack-label">
+            <span class="active-pack-icon" x-text="getActivePack()?.icon || ''"></span>
+            <span x-text="getActivePack()?.name || ''"></span>
+          </div>
+          <div class="welcome-hints">
+            <template x-for="hint in getActivePackHints()" :key="hint">
+              <button class="hint-chip pack-hint" :disabled="inputDisabled" @click="handleHintChip(hint)" x-text="hint"></button>
+            </template>
+          </div>
+        </div>
+        <div class="welcome-hints">
+          <template x-for="hint in displayedHints" :key="hint">
+            <button class="hint-chip" :disabled="inputDisabled" @click="handleHintChip(hint)" x-text="hint"></button>
+          </template>
+        </div>
+        <div class="learning-mode-entry">
+          <button class="learning-mode-button" :disabled="inputDisabled" @click="openLearningSelect()">
+            <span class="learning-mode-icon" aria-hidden="true">&#x1F4DA;</span>
+            <span>がくしゅうモード</span>
+          </button>
+        </div>
+      </div>
+
+      <template x-for="msg in messages" :key="msg.id">
+        <div :class="'message ' + msg.role">
+          <div class="message-label" x-text="msg.role === 'user' ? 'あなた' : 'AI'"></div>
+          <div class="filter-badge" x-show="msg.role === 'filtered'">フィルタ</div>
+          <div class="message-bubble">
+            <template x-if="msg.isTyping">
+              <div class="typing-indicator"><span></span><span></span><span></span></div>
+            </template>
+            <template x-if="!msg.isTyping">
+              <span x-text="msg.text"></span>
+            </template>
+          </div>
+          <button
+            class="continue-chip"
+            x-show="msg.truncated && !isGenerating"
+            @click="handleHintChip('続けて')"
+          >つづきを きく</button>
+          <button
+            class="continue-chip learning-next-chip"
+            x-show="learningMode && msg.role === 'ai' && !msg.isTyping && !isGenerating && msg.id === messages[messages.length - 1]?.id"
+            @click="handleHintChip('もんだいを だして')"
+          >つぎの もんだい</button>
+        </div>
+      </template>
+    </main>
+
+    <div class="voice-status" x-show="showVoiceBar">
+      <template x-if="!showVoiceConfirm">
+        <div class="voice-status-inner">
+          <span class="voice-status-dot"></span>
+          こえで おはなしちゅう — マイクボタンで やめる
+        </div>
+      </template>
+      <template x-if="showVoiceConfirm">
+        <div class="voice-confirm-bar">
+          <span class="voice-confirm-label">これで いい？</span>
+          <button class="voice-confirm-btn send" @click="confirmVoiceInput()">おくる</button>
+          <button class="voice-confirm-btn retry" @click="retryVoiceInput()">やりなおし</button>
+        </div>
+      </template>
+      <label class="voice-confirm-toggle" x-show="hasSpeechRecognition">
+        <input type="checkbox" x-model="voiceConfirmMode">
+        <span class="voice-confirm-toggle-label">かくにん</span>
+      </label>
+    </div>
+    <div class="hiragana-preview" x-show="hiraganaPreview" x-transition>
+      <span class="hiragana-preview-label">ひらがな:</span>
+      <span x-text="hiraganaPreview"></span>
+    </div>
+    <footer class="chat-input">
+      <textarea
+        x-ref="messageInput"
+        x-model="inputText"
+        placeholder="ここに かいてね..."
+        rows="1"
+        :disabled="inputDisabled"
+        @input="resizeTextarea()"
+        @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); sendMessage() }"
+      ></textarea>
+      <button
+        class="voice-button"
+        x-show="hasSpeechRecognition"
+        :class="{ listening: isListening }"
+        :disabled="inputDisabled"
+        @click="toggleVoice()"
+        title="こえで はなす"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+      </button>
+      <button class="send-button" :disabled="inputDisabled || !inputText.trim()" @click="sendMessage()">おくる</button>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
