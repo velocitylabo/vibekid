@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ヴァイブコーディング</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body x-data="vibeApp" x-init="init()" :data-theme="darkMode ? 'dark' : 'light'" x-cloak>
+  <div class="app">
+    <header class="app-header">
+      <h1 class="app-title">&#x1F680; ヴァイブコーディング</h1>
+      <div class="app-status" x-text="statusText" :class="statusType"></div>
+      <button class="theme-toggle" @click="toggleDarkMode()" :title="darkMode ? 'ライトモード' : 'ダークモード'">
+        <span x-text="darkMode ? '☀️' : '🌙'"></span>
+      </button>
+    </header>
+
+    <section class="code-preview-panel" x-show="previewCode" x-transition>
+      <div class="code-preview-panel-header">
+        <span class="code-preview-panel-title">&#x1F680; うごくよ！</span>
+        <button class="code-preview-panel-close" @click="closeCodePreview()" title="とじる">&times;</button>
+      </div>
+      <iframe
+        class="code-preview-panel-iframe"
+        sandbox="allow-scripts"
+        :srcdoc="previewCode"
+      ></iframe>
+    </section>
+
+    <main class="chat-messages" x-ref="chatMessages">
+      <div class="welcome-message" x-show="messages.length === 0">
+        <p class="welcome-text">なにを つくる？<br />「〜を つくって」って かいてみてね！</p>
+        <div class="welcome-hints">
+          <template x-for="hint in hints" :key="hint">
+            <button class="hint-chip" :disabled="isGenerating || !session" @click="inputText = hint; sendMessage()" x-text="hint"></button>
+          </template>
+        </div>
+      </div>
+
+      <template x-for="msg in messages" :key="msg.id">
+        <div :class="'message ' + msg.role">
+          <div class="message-label" x-text="msg.role === 'user' ? 'あなた' : 'AI'"></div>
+          <div class="message-bubble">
+            <template x-if="msg.isTyping">
+              <div class="typing-indicator"><span></span><span></span><span></span></div>
+            </template>
+            <template x-if="!msg.isTyping">
+              <span x-text="msg.text"></span>
+            </template>
+          </div>
+          <button
+            class="code-run-chip"
+            x-show="msg.codeBlock && !isGenerating"
+            @click="openCodePreview(msg.codeBlock)"
+          >&#x25B6; もういちど うごかす</button>
+        </div>
+      </template>
+    </main>
+
+    <form class="chat-input" @submit.prevent="sendMessage()">
+      <textarea
+        x-ref="messageInput"
+        x-model="inputText"
+        @input="resizeTextarea()"
+        @keydown.enter.prevent="sendMessage()"
+        placeholder="ここに かいてね..."
+        :disabled="isGenerating || !session"
+        rows="1"
+      ></textarea>
+      <button type="submit" class="send-button" :disabled="isGenerating || !session || !inputText.trim()">おくる</button>
+    </form>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
