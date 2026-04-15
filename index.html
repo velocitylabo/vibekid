@@ -65,7 +65,7 @@
         x-ref="messageInput"
         x-model="inputText"
         @input="resizeTextarea()"
-        @keydown.enter.prevent="sendMessage()"
+        @keydown="handleKeydown($event)"
         placeholder="ここに かいてね..."
         :disabled="isGenerating || !session"
         rows="1"

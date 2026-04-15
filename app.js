@@ -96,6 +96,13 @@ document.addEventListener("alpine:init", () => {
       } catch (e) { /* ignore */ }
     },
 
+    handleKeydown(e) {
+      if (e.key === "Enter" && !e.isComposing && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    },
+
     resizeTextarea() {
       const el = this.$refs.messageInput;
       if (!el) return;
