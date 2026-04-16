@@ -1,20 +1,88 @@
+const MODEL_URL = "./models/gemma-4-E2B-it-web.task";
+const MODEL_FILE = "gemma-4-E2B-it-web.task";
+
+async function checkWebGPU() {
+  if (!navigator.gpu) throw new Error("WebGPU 非対応ブラウザ");
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error("GPU adapter 取得失敗");
+  const info = {
+    maxBufferGB: (adapter.limits.maxBufferSize / 1e9).toFixed(2),
+    f16: adapter.features.has("shader-f16"),
+  };
+  console.log("[vibeApp] WebGPU", info);
+  return info;
+}
+
+async function loadModelWithCache(url, fileName, onProgress) {
+  const opfs = await navigator.storage.getDirectory();
+
+  try {
+    const fh = await opfs.getFileHandle(fileName);
+    const sh = await opfs.getFileHandle(fileName + "_size");
+    const file = await fh.getFile();
+    const expected = parseInt(await (await sh.getFile()).text(), 10);
+    if (Number.isFinite(expected) && file.size === expected) {
+      onProgress?.({ phase: "cache-hit", bytes: file.size, total: expected });
+      return { stream: file.stream(), hit: true };
+    }
+    await opfs.removeEntry(fileName).catch(() => {});
+    await opfs.removeEntry(fileName + "_size").catch(() => {});
+  } catch (_) {}
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("モデル fetch 失敗: " + res.status);
+  const total = parseInt(res.headers.get("Content-Length") || "0", 10);
+
+  let bytesSeen = 0;
+  const progressTap = new TransformStream({
+    transform(chunk, ctrl) {
+      bytesSeen += chunk.byteLength;
+      onProgress?.({ phase: "fetch", bytes: bytesSeen, total });
+      ctrl.enqueue(chunk);
+    },
+  });
+
+  const [forConsumer, forCache] = res.body.pipeThrough(progressTap).tee();
+
+  (async () => {
+    try {
+      const fh = await opfs.getFileHandle(fileName, { create: true });
+      await forCache.pipeTo(await fh.createWritable());
+      const sh = await opfs.getFileHandle(fileName + "_size", { create: true });
+      const sw = await sh.createWritable();
+      const finalSize = total || (await (await opfs.getFileHandle(fileName)).getFile()).size;
+      await sw.write(String(finalSize));
+      await sw.close();
+      console.log("[vibeApp] OPFS 永続化完了");
+    } catch (e) {
+      console.warn("[vibeApp] OPFS 書き込み失敗", e);
+    }
+  })();
+
+  return { stream: forConsumer, hit: false };
+}
+
 document.addEventListener("alpine:init", () => {
   Alpine.data("vibeApp", () => ({
     messages: [],
     inputText: "",
     isGenerating: false,
-    session: null,
+    llm: null,
+    modelReady: false,
+    history: [],
     statusText: "じゅんびちゅう...",
     statusType: "",
+    loadPct: 0,
     previewCode: "",
     darkMode: false,
     _nextId: 1,
 
     hints: [
-      "ボールがはねるゲームをつくって",
-      "カラフルな花火をつくって",
-      "もぐらたたきをつくって",
-      "おとがなるピアノをつくって",
+      "ねこがはしるアニメをつくって",
+      "ボタンで花火がでるやつ",
+      "にじいろのボールがとぶやつ",
+      "もぐらたたきしたい",
+      "おえかきできるやつ",
     ],
 
     DARK_KEY: "vibe_dark_mode",
@@ -22,78 +90,98 @@ document.addEventListener("alpine:init", () => {
     async init() {
       try {
         this.darkMode = localStorage.getItem(this.DARK_KEY) === "1";
-      } catch (e) { /* ignore */ }
-
-      const api =
-        typeof LanguageModel !== "undefined" ? LanguageModel :
-        self.ai?.languageModel ? self.ai.languageModel :
-        null;
-
-      if (!api) {
-        this.statusText = "Chrome Canary の Prompt API が つかえないよ";
-        this.statusType = "error";
-        return;
-      }
-
-      const languageOptions = {
-        expectedInputs: [{ type: "text", languages: ["ja"] }],
-        expectedOutputs: [{ type: "text", languages: ["ja"] }],
-      };
-
-      let availability;
-      try {
-        availability = await api.availability(languageOptions);
-      } catch (err) {
-        this.statusText = "エラー";
-        this.statusType = "error";
-        console.error("Availability check failed:", err);
-        return;
-      }
-
-      if (availability === "unavailable") {
-        this.statusText = "つかえないよ";
-        this.statusType = "error";
-        return;
-      }
+      } catch (e) {}
 
       try {
-        this.session = await api.create({
-          ...languageOptions,
-          systemPrompt: this._systemPrompt(),
-          monitor: (m) => {
-            m.addEventListener("downloadprogress", (e) => {
-              const pct = Math.round((e.loaded / e.total) * 100);
-              this.statusText = "ダウンロードちゅう " + pct + "%";
-              this.statusType = "downloading";
-            });
-          },
+        const gpu = await checkWebGPU();
+        if (Number(gpu.maxBufferGB) < 1.5) {
+          this.statusText = "GPU メモリがたりないよ（Chrome 起動フラグを確認してね）";
+          this.statusType = "error";
+          return;
+        }
+
+        this.statusText = "AI のなかみを よみこんでるよ...";
+        this.statusType = "downloading";
+
+        try { await navigator.storage.persist(); } catch (e) {}
+
+        const { FilesetResolver, LlmInference } = await import(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/genai_bundle.mjs"
+        );
+        const fileset = await FilesetResolver.forGenAiTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
+        );
+
+        const t0 = performance.now();
+        const { stream, hit } = await loadModelWithCache(MODEL_URL, MODEL_FILE, ({ phase, bytes, total }) => {
+          if (total) {
+            this.loadPct = Math.round((bytes / total) * 100);
+            this.statusText = hit
+              ? "キャッシュから よみこんでるよ..."
+              : "AI のなかみを ダウンロードちゅう " + this.loadPct + "%";
+          }
         });
+
+        this.statusText = "AI のあたまを くみたてちゅう...";
+        this.statusType = "downloading";
+
+        this.llm = await LlmInference.createFromOptions(fileset, {
+          baseOptions: { modelAssetBuffer: stream.getReader() },
+          maxTokens: 2048,
+          topK: 40,
+          temperature: 0.7,
+          randomSeed: 42,
+        });
+
+        const sec = ((performance.now() - t0) / 1000).toFixed(1);
+        console.log("[vibeApp] LlmInference ready", { hit, sec });
+
+        this.modelReady = true;
         this.statusText = "つくれるよ！";
         this.statusType = "ready";
         this.$nextTick(() => this.$refs.messageInput?.focus());
       } catch (err) {
-        this.statusText = "セッション さくせいに しっぱい";
+        console.error("[vibeApp] init 失敗:", err);
+        this.statusText = "じゅんびに しっぱいしちゃった...";
         this.statusType = "error";
-        console.error("Session creation failed:", err);
       }
     },
 
     _systemPrompt() {
-      return "あなたは子供向けプログラミングの先生AIです。" +
-        "子供が「〜を作って」「〜したい」と言ったら、HTMLとJavaScriptとCSSで動くプログラムを書いてください。" +
-        "必ず1つの完全なHTMLファイルとして、```html で囲んで出力してください。" +
-        "コードには日本語のコメントをつけてください。" +
-        "小学校低学年にわかるように、やさしい言葉で説明してください。" +
-        "コードの後に、1〜2文の短い説明を日本語でつけてください。" +
-        "Canvas、CSS animation、Web Audio API などを活用してください。" +
-        "外部ライブラリは使わず、vanilla HTML/CSS/JS のみを使ってください。";
+      // base model 用: 最小限の指示（SFT 後に Q1 詳細版に差し替え）
+      return (
+        "子供が「〜を作って」と言ったら、HTMLとCSSとJavaScriptで動くプログラムを1つ書いてください。\n" +
+        "必ず1つの完全なHTMLファイルとして、```html で囲んで出力してください。\n" +
+        "外部ライブラリは使わず、vanilla HTML/CSS/JS のみを使ってください。\n" +
+        "CSS animationの@keyframesを積極的に使ってください。"
+      );
+    },
+
+    _buildPrompt(userText) {
+      // 履歴なし: 毎回 system + user input のみ送る
+      // LlmInference の KV cache が呼び出し間で累積するため、
+      // 履歴を含めると 2 回目以降で token 枯渇する
+      // 会話的フォローアップは SFT 後に Session API で対応予定
+      return (
+        "<start_of_turn>user\n" +
+        this._systemPrompt() + "\n\n" +
+        userText +
+        "<end_of_turn>\n" +
+        "<start_of_turn>model\n"
+      );
+    },
+
+    resetChat() {
+      this.history = [];
+      this.messages = [];
+      this.previewCode = "";
     },
 
     toggleDarkMode() {
       this.darkMode = !this.darkMode;
       try {
         localStorage.setItem(this.DARK_KEY, this.darkMode ? "1" : "0");
-      } catch (e) { /* ignore */ }
+      } catch (e) {}
     },
 
     handleKeydown(e) {
@@ -116,8 +204,13 @@ document.addEventListener("alpine:init", () => {
     },
 
     extractCodeBlock(text) {
-      const match = text.match(/```html\s*([\s\S]*?)```/);
-      return match ? match[1].trim() : null;
+      // 1) ```html ... ``` マーカーで囲まれたブロック
+      const fenced = text.match(/```html\s*([\s\S]*?)```/);
+      if (fenced) return fenced[1].trim();
+      // 2) マーカーなしの raw HTML（<!DOCTYPE または <html で始まる）
+      const raw = text.match(/(<!DOCTYPE[\s\S]*<\/html>)/i);
+      if (raw) return raw[1].trim();
+      return null;
     },
 
     openCodePreview(code) {
@@ -133,7 +226,7 @@ document.addEventListener("alpine:init", () => {
 
     async sendMessage() {
       const text = this.inputText.trim();
-      if (!text || this.isGenerating || !this.session) return;
+      if (!text || this.isGenerating || !this.modelReady) return;
 
       this.isGenerating = true;
 
@@ -160,35 +253,42 @@ document.addEventListener("alpine:init", () => {
       });
       this.$nextTick(() => this.scrollToBottom());
 
+      const typingIdx = this.messages.findIndex((m) => m.id === typingId);
+
       try {
-        const stream = await this.session.promptStreaming(text);
-        const typingIdx = this.messages.findIndex((m) => m.id === typingId);
+        const prompt = this._buildPrompt(text);
+        console.log("[vibeApp] prompt length:", prompt.length);
+        let fullText = "";
+
         if (typingIdx !== -1) this.messages[typingIdx].isTyping = false;
 
-        let fullText = "";
-        for await (const chunk of stream) {
-          fullText += chunk;
+        await this.llm.generateResponse(prompt, (partial, done) => {
+          fullText += partial;
+          const cleaned = fullText.replace(/^>+\s*/, "");
           if (typingIdx !== -1) {
-            this.messages[typingIdx].text = fullText;
+            this.messages[typingIdx].text = cleaned;
           }
           this.scrollToBottom();
-        }
+        });
 
-        const code = this.extractCodeBlock(fullText);
+        // generateResponse 完了後（WASM コールバック外）でコード抽出・プレビュー
+        const cleanedFull = fullText.replace(/^>+\s*/, "");
+
+        const code = this.extractCodeBlock(cleanedFull);
+        const explanation = cleanedFull.replace(/```[\s\S]*?```/g, "").trim() || "できたよ！";
+
         if (code && typingIdx !== -1) {
           this.messages[typingIdx].codeBlock = code;
-          const explanation = fullText.replace(/```[\s\S]*?```/g, "").trim();
-          this.messages[typingIdx].text = explanation || "できたよ！";
+          this.messages[typingIdx].text = explanation;
           this.openCodePreview(code);
         }
       } catch (err) {
-        console.error("Prompt error:", err);
-        const typingIdx = this.messages.findIndex((m) => m.id === typingId);
+        console.error("[vibeApp] generateResponse 失敗:", err);
         if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
         this.messages.push({
           id: this._nextId++,
           role: "error",
-          text: "ごめんね、エラーがおきちゃった。もういちど やってみてね。",
+          text: "😢",
           isTyping: false,
         });
       } finally {
