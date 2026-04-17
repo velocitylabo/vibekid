@@ -78,12 +78,14 @@ document.addEventListener("alpine:init", () => {
     _nextId: 1,
 
     hints: [
-      "ねこがはしるアニメをつくって",
-      "ボタンで花火がでるやつ",
+      "ねこがぴょんぴょんはねるやつ",
+      "ボタンおすといろがかわるやつ",
       "にじいろのボールがとぶやつ",
-      "もぐらたたきしたい",
       "おえかきできるやつ",
+      "ほしがキラキラひかるやつ",
     ],
+
+    P5_CDN: "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js",
 
     DARK_KEY: "vibe_dark_mode",
 
@@ -100,7 +102,7 @@ document.addEventListener("alpine:init", () => {
           return;
         }
 
-        this.statusText = "AI のなかみを よみこんでるよ...";
+        this.statusText = "ロボットくんを おこしてるよ...";
         this.statusType = "downloading";
 
         try { await navigator.storage.persist(); } catch (e) {}
@@ -117,12 +119,12 @@ document.addEventListener("alpine:init", () => {
           if (total) {
             this.loadPct = Math.round((bytes / total) * 100);
             this.statusText = hit
-              ? "キャッシュから よみこんでるよ..."
-              : "AI のなかみを ダウンロードちゅう " + this.loadPct + "%";
+              ? "おぼえてた！ よみこんでるよ..."
+              : "のうみそを ダウンロードちゅう... " + this.loadPct + "%";
           }
         });
 
-        this.statusText = "AI のあたまを くみたてちゅう...";
+        this.statusText = "のうみそを くみたてちゅう...";
         this.statusType = "downloading";
 
         this.llm = await LlmInference.createFromOptions(fileset, {
@@ -137,7 +139,7 @@ document.addEventListener("alpine:init", () => {
         console.log("[vibeApp] LlmInference ready", { hit, sec });
 
         this.modelReady = true;
-        this.statusText = "つくれるよ！";
+        this.statusText = "じゅんびOK！";
         this.statusType = "ready";
         this.$nextTick(() => this.$refs.messageInput?.focus());
       } catch (err) {
@@ -148,13 +150,45 @@ document.addEventListener("alpine:init", () => {
     },
 
     _systemPrompt() {
-      // base model 用: 最小限の指示（SFT 後に Q1 詳細版に差し替え）
-      return (
-        "子供が「〜を作って」と言ったら、HTMLとCSSとJavaScriptで動くプログラムを1つ書いてください。\n" +
-        "必ず1つの完全なHTMLファイルとして、```html で囲んで出力してください。\n" +
-        "外部ライブラリは使わず、vanilla HTML/CSS/JS のみを使ってください。\n" +
-        "CSS animationの@keyframesを積極的に使ってください。"
-      );
+      // base model 用: one-shot 固定（SFT 後も one-shot で運用）
+      // 4/17 spike で two-shot は 2B モデルを混乱させることを確認
+      return `子供が「〜作って」と言ったら、p5.js のスケッチコードを1つだけ書いてください。
+
+例（「ボールが跳ねる」の場合）:
+\`\`\`js
+let ballX = 200;
+let ballY = 100;
+let ballVY = 0;
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+  ballVY = ballVY + 0.5;
+  ballY = ballY + ballVY;
+  if (ballY > 370) {
+    ballY = 370;
+    ballVY = -10;
+  }
+  fill(255, 100, 100);
+  noStroke();
+  ellipse(ballX, ballY, 50, 50);
+}
+\`\`\`
+
+ルール:
+- 変数は function の外で let で宣言する
+- 関数は必ず setup() と draw() を書く
+- createCanvas(400, 400) を使う
+- background() を draw の最初に呼ぶ
+- 変数名は ballX, bgColor, myScore のような分かりやすい名前を使う
+- p5.js の組み込み関数名（color, fill, background, width, height）を変数名にしない
+- 短く、動くコードだけ書く（20〜40行程度）
+- \`\`\`js で囲んで出力する
+
+同じスタイルで、指示されたものを作ってください:`;
     },
 
     _buildPrompt(userText) {
@@ -204,19 +238,36 @@ document.addEventListener("alpine:init", () => {
     },
 
     extractCodeBlock(text) {
-      // 1) ```html ... ``` マーカーで囲まれたブロック
-      const fenced = text.match(/```html\s*([\s\S]*?)```/);
+      // p5.js モード: ```js または ```javascript ブロックを抽出
+      const fenced = text.match(/```(?:js|javascript)\s*([\s\S]*?)```/);
       if (fenced) return fenced[1].trim();
-      // 2) マーカーなしの raw HTML（<!DOCTYPE または <html で始まる）
-      const raw = text.match(/(<!DOCTYPE[\s\S]*<\/html>)/i);
+      // fallback: マーカーなしで function setup() / draw() を含む素の JS
+      const raw = text.match(/(function\s+setup\s*\(\)[\s\S]*?function\s+draw\s*\(\)[\s\S]*?)(?:\n\s*(?:```|$))/);
       if (raw) return raw[1].trim();
+      // より緩い fallback: setup と draw の両方を含むテキスト全体
+      if (/function\s+setup\s*\(\)/.test(text) && /function\s+draw\s*\(\)/.test(text)) {
+        return text.trim();
+      }
       return null;
     },
 
+    wrapP5(code) {
+      // p5.js CDN をロードする iframe 用 HTML を組み立てる
+      return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
+<script src="${this.P5_CDN}"><\/script>
+<style>html,body{margin:0;padding:0;background:#fff;overflow:hidden}canvas{display:block}</style>
+</head><body><script>
+${code}
+<\/script></body></html>`;
+    },
+
     openCodePreview(code) {
+      // code は p5.js スニペット、wrapP5 で iframe 用 HTML に包む
       this.previewCode = "";
       this.$nextTick(() => {
-        this.previewCode = code;
+        this.previewCode = this.wrapP5(code);
       });
     },
 
