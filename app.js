@@ -270,11 +270,13 @@ function draw() {
 
     wrapP5(code) {
       // p5.js CDN をロードする iframe 用 HTML を組み立てる
+      // canvas を iframe viewport に収める: flex center + !important で p5 のインライン style を上書き、
+      // 100vw/100vh で percentage 非伝播を回避してアスペクト比保ったままスケール
       return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
 <script src="${this.P5_CDN}"><\/script>
-<style>html,body{margin:0;padding:0;background:#fff;overflow:hidden}canvas{display:block}</style>
+<style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
 </head><body><script>
 ${code}
 <\/script></body></html>`;
