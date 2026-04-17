@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * SFT データ合成用 HTML validator
+ * SFT データ合成用 p5.js validator
  * Playwright headless Chromium でサンプルを実行し、品質チェックを行う
  *
  * Usage:
  *   node validate-html.mjs --in=batch.json --out=passed.jsonl [--report=report.json]
  *
- * Input: JSON array of {prompt, html, explanation, category, difficulty, techniques}
+ * Input: JSON array of {prompt, code, explanation, category, difficulty, techniques}
  * Output: 検証通過したサンプルだけ JSONL で出力
  */
 import { chromium } from "playwright";
-import { readFileSync, writeFileSync, appendFileSync } from "fs";
+import { readFileSync, writeFileSync, appendFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { writeFile, unlink } from "fs/promises";
@@ -29,7 +29,34 @@ if (!args.in) {
   process.exit(1);
 }
 
-const TIMEOUT_MS = 4000;
+// --- Normalize prompt for dedup (NFKC + strip all whitespace) ---
+function normalizePrompt(text) {
+  return (text || "").normalize("NFKC").replace(/\s+/g, "");
+}
+
+// --- Load existing prompts for dedup ---
+const existingNormalized = new Set();
+if (existsSync(args.out)) {
+  const lines = readFileSync(args.out, "utf-8").trim().split("\n").filter(Boolean);
+  for (const line of lines) {
+    existingNormalized.add(normalizePrompt(JSON.parse(line).prompt));
+  }
+}
+console.log(`[validate] ${existingNormalized.size} existing prompts loaded for dedup`);
+
+const TIMEOUT_MS = 6000;
+const P5_CDN = "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js";
+
+function wrapP5(code) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
+<script src="${P5_CDN}"><\/script>
+<style>html,body{margin:0;padding:0;background:#fff}canvas{display:block}</style>
+</head><body><script>
+${code}
+<\/script></body></html>`;
+}
 
 const samples = JSON.parse(readFileSync(args.in, "utf-8"));
 console.log(`[validate] ${samples.length} samples loaded from ${args.in}`);
@@ -43,31 +70,36 @@ for (let i = 0; i < samples.length; i++) {
   const reasons = [];
   let pass = true;
 
-  const html = sample.html || "";
+  const code = sample.code || "";
 
-  // --- Check 1: HTML minimum length ---
-  if (html.length < 200) {
-    reasons.push(`html_too_short (${html.length} chars)`);
+  // --- Check 1: Code minimum length ---
+  if (code.length < 80) {
+    reasons.push(`code_too_short (${code.length} chars)`);
     pass = false;
   }
 
-  // --- Check 2: External resources ---
-  if (/<(?:script|img|link|iframe)\s[^>]*src\s*=\s*["']https?:/i.test(html)) {
-    reasons.push("external_resource");
+  // --- Check 2: Required p5.js functions ---
+  if (!/function\s+setup\s*\(\s*\)/.test(code)) {
+    reasons.push("missing_setup");
+    pass = false;
+  }
+  if (!/function\s+draw\s*\(\s*\)/.test(code)) {
+    reasons.push("missing_draw");
+    pass = false;
+  }
+  if (!/createCanvas\s*\(/.test(code)) {
+    reasons.push("missing_createCanvas");
     pass = false;
   }
 
-  // --- Check 3: Animation check (for animation/game categories) ---
-  const needsAnimation = ["animation", "game"].includes(sample.category);
-  if (needsAnimation) {
-    const hasAnimation =
-      /@keyframes\s/.test(html) ||
-      /requestAnimationFrame/.test(html) ||
-      /setInterval/.test(html);
-    if (!hasAnimation) {
-      reasons.push("no_animation_detected");
-      pass = false;
-    }
+  // --- Check 3: No forbidden constructs ---
+  if (/<script[\s>]|<\/script>/i.test(code)) {
+    reasons.push("raw_html_in_code");
+    pass = false;
+  }
+  if (/fetch\s*\(|XMLHttpRequest/i.test(code)) {
+    reasons.push("network_call");
+    pass = false;
   }
 
   // --- Static checks done, skip browser if already failed ---
@@ -77,7 +109,8 @@ for (let i = 0; i < samples.length; i++) {
     continue;
   }
 
-  // --- Check 4-6: Browser execution ---
+  // --- Browser execution ---
+  const html = wrapP5(code);
   const tmpPath = join(tmpdir(), `sft_validate_${i}_${Date.now()}.html`);
   await writeFile(tmpPath, html, "utf-8");
 
@@ -95,9 +128,9 @@ for (let i = 0; i < samples.length; i++) {
   });
 
   try {
-    await page.goto(`file://${tmpPath}`, { timeout: TIMEOUT_MS, waitUntil: "load" });
-    // Wait a bit for JS to execute
-    await page.waitForTimeout(1500);
+    await page.goto(`file://${tmpPath}`, { timeout: TIMEOUT_MS, waitUntil: "networkidle" });
+    // p5.js の setup/draw が動き出すまで待つ
+    await page.waitForTimeout(2000);
 
     // Check 4: Page errors (JS exceptions)
     if (pageError) {
@@ -111,25 +144,42 @@ for (let i = 0; i < samples.length; i++) {
       pass = false;
     }
 
-    // Check 6: Visible DOM
-    const domInfo = await page.evaluate(() => {
-      const body = document.body;
-      if (!body) return { children: 0, width: 0, height: 0, textLen: 0 };
-      const rect = body.getBoundingClientRect();
-      return {
-        children: body.children.length,
-        width: rect.width,
-        height: rect.height,
-        textLen: body.innerText.length + body.innerHTML.length,
-      };
+    // Check 6: Canvas が生成され描画されているか
+    const canvasInfo = await page.evaluate(() => {
+      const canvas = document.querySelector("canvas");
+      if (!canvas) return { hasCanvas: false };
+      const rect = canvas.getBoundingClientRect();
+      // Canvas 内容が空白でないか簡易チェック（全面同色じゃない）
+      let nonBlank = false;
+      try {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          // 全面 imageData を取得し、複数点をサンプリング
+          const w = canvas.width;
+          const h = canvas.height;
+          const data = ctx.getImageData(0, 0, w, h).data;
+          const first = (data[0] << 16) | (data[1] << 8) | data[2];
+          const stride = 4 * 100;  // 100px 間隔でスキャン
+          for (let i = stride; i < data.length; i += stride) {
+            const px = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+            if (px !== first) { nonBlank = true; break; }
+          }
+        }
+      } catch (_) { nonBlank = true; }  // WebGL canvas は getImageData 不可、無視
+      return { hasCanvas: true, width: rect.width, height: rect.height, nonBlank };
     });
 
-    if (domInfo.children === 0) {
-      reasons.push("empty_body");
+    // インタラクティブなスケッチ（mousePressed/keyPressed 等）なら blank を許容
+    const isInteractive = /function\s+(mousePressed|mouseClicked|mouseReleased|keyPressed|keyReleased|touchStarted|touchEnded)\s*\(/.test(code);
+
+    if (!canvasInfo.hasCanvas) {
+      reasons.push("no_canvas");
       pass = false;
-    }
-    if (domInfo.width === 0 || domInfo.height === 0) {
-      reasons.push(`invisible (${domInfo.width}x${domInfo.height})`);
+    } else if (canvasInfo.width === 0 || canvasInfo.height === 0) {
+      reasons.push(`canvas_invisible (${canvasInfo.width}x${canvasInfo.height})`);
+      pass = false;
+    } else if (!canvasInfo.nonBlank && !isInteractive) {
+      reasons.push("canvas_blank");
       pass = false;
     }
   } catch (err) {
@@ -156,13 +206,23 @@ await browser.close();
 const passed = results.filter((r) => r.pass);
 const failed = results.filter((r) => !r.pass);
 
-// Append passed samples to JSONL (without pass/reasons metadata)
+// Append passed samples to JSONL (without pass/reasons metadata), skipping duplicates
+let appended = 0;
+let dedupSkipped = 0;
 for (const r of passed) {
   const { pass: _p, reasons: _r, ...clean } = r;
+  const norm = normalizePrompt(clean.prompt);
+  if (existingNormalized.has(norm)) {
+    console.log(`  [dedup] skipped: "${(clean.prompt || "").slice(0, 40)}"`);
+    dedupSkipped++;
+    continue;
+  }
+  existingNormalized.add(norm);
   appendFileSync(args.out, JSON.stringify(clean) + "\n");
+  appended++;
 }
 
-console.log(`\n[validate] Done: ${passed.length} pass / ${failed.length} fail / ${results.length} total`);
+console.log(`\n[validate] Done: ${passed.length} pass / ${failed.length} fail / ${results.length} total / ${dedupSkipped} dedup-skipped / ${appended} appended`);
 
 // Optional report
 if (args.report) {
@@ -177,7 +237,10 @@ if (args.report) {
     total: results.length,
     passed: passed.length,
     failed: failed.length,
+    dedupSkipped,
+    appended,
     yieldRate: (passed.length / results.length * 100).toFixed(1) + "%",
+    appendRate: (appended / results.length * 100).toFixed(1) + "%",
     failReasons: reasonCounts,
   };
   writeFileSync(args.report, JSON.stringify(report, null, 2));
