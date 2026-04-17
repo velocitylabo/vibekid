@@ -27,6 +27,212 @@
 
 * { box-sizing: border-box; }
 
+/* ===== ローディング画面 ===== */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: linear-gradient(135deg, #e8f5e9, #fff9c4, #e3f2fd);
+  z-index: 100;
+  transition: opacity 0.6s ease;
+}
+
+[data-theme="dark"] .loading-screen {
+  background: linear-gradient(135deg, #0f1a0f, #1a1a0f, #0f1a2e);
+}
+
+.opacity-1 { opacity: 1; }
+.opacity-0 { opacity: 0; }
+
+.loading-character {
+  position: relative;
+}
+
+/* ロボットくん */
+.loading-robot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: robot-float 2s ease-in-out infinite;
+}
+
+.robot-head {
+  width: 100px;
+  height: 80px;
+  background: linear-gradient(135deg, #4CAF50, #66BB6A);
+  border-radius: 20px 20px 16px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  position: relative;
+  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.3);
+}
+
+.robot-eye {
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  position: relative;
+}
+
+.robot-eye::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #333;
+  border-radius: 50%;
+  top: 5px;
+  left: 5px;
+  animation: eye-look 3s ease-in-out infinite;
+}
+
+.robot-eye.blink {
+  animation: eye-blink 0.3s ease;
+}
+
+.robot-mouth {
+  width: 30px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 0 0 10px 10px;
+  position: absolute;
+  bottom: 12px;
+}
+
+/* エラー時のロボット */
+.robot-error .robot-head {
+  background: linear-gradient(135deg, #ef5350, #e57373);
+  box-shadow: 0 4px 16px rgba(239, 83, 80, 0.3);
+}
+
+.robot-error .robot-body {
+  background: linear-gradient(135deg, #e53935, #ef5350);
+}
+
+.robot-error .robot-eye::after {
+  background: #c62828;
+  animation: none;
+}
+
+.robot-error .robot-mouth {
+  border-radius: 10px 10px 0 0;
+  bottom: 14px;
+}
+
+.robot-body {
+  width: 70px;
+  height: 50px;
+  background: linear-gradient(135deg, #43A047, #4CAF50);
+  border-radius: 8px 8px 16px 16px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+}
+
+.robot-gear {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.8);
+  transition: transform 0.3s;
+}
+
+.robot-gear.spinning {
+  animation: gear-spin 2s linear infinite;
+}
+
+.robot-building {
+  animation: robot-float 2s ease-in-out infinite, robot-shake 0.5s ease-in-out infinite;
+}
+
+@keyframes robot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes robot-shake {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-10px) rotate(-2deg); }
+  75% { transform: translateY(-10px) rotate(2deg); }
+}
+
+@keyframes gear-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes eye-look {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(3px, 0); }
+  50% { transform: translate(0, 2px); }
+  75% { transform: translate(-3px, 0); }
+}
+
+@keyframes eye-blink {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.1); }
+}
+
+.loading-text {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: var(--text);
+  text-align: center;
+  animation: text-pulse 2s ease-in-out infinite;
+}
+
+@keyframes text-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+.loading-bar-track {
+  width: 220px;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .loading-bar-track {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #66BB6A, #81C784);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+  background-size: 200% 100%;
+  animation: bar-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes bar-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.loading-subtext {
+  font-size: 0.85rem;
+  color: #c62828;
+  text-align: center;
+  max-width: 300px;
+}
+
+.transition-fade-out {
+  transition: opacity 0.6s ease;
+}
+
 html, body {
   margin: 0;
   padding: 0;
