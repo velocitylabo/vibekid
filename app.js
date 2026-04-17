@@ -1,6 +1,23 @@
 const MODEL_URL = "./models/gemma-4-E2B-it-web.task";
 const MODEL_FILE = "gemma-4-E2B-it-web.task";
 
+// 旧版「AI おしゃべりひろば」時代の Service Worker / Cache Storage を一掃する。
+// 以前アクセス済みのブラウザだけが対象。新規ユーザーには影響しない。
+(async () => {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    if (regs.length === 0) return;
+    await Promise.all(regs.map((r) => r.unregister()));
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    if (!sessionStorage.getItem("vibe_sw_purged")) {
+      sessionStorage.setItem("vibe_sw_purged", "1");
+      location.reload();
+    }
+  } catch (_) {}
+})();
+
 async function checkWebGPU() {
   if (!navigator.gpu) throw new Error("WebGPU 非対応ブラウザ");
   const adapter = await navigator.gpu.requestAdapter();
