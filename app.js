@@ -270,8 +270,7 @@ function draw() {
 
     wrapP5(code) {
       // p5.js CDN をロードする iframe 用 HTML を組み立てる
-      // canvas を iframe viewport に収める: flex center + !important で p5 のインライン style を上書き、
-      // 100vw/100vh で percentage 非伝播を回避してアスペクト比保ったままスケール
+      // canvas を iframe viewport に収める: flex center + max 100% で縦横比を保ったまま縮小
       return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
@@ -287,6 +286,50 @@ ${code}
       this.previewCode = "";
       this.$nextTick(() => {
         this.previewCode = this.wrapP5(code);
+      });
+    },
+
+    // hidden sandboxed iframe で実行して、エラーなしに canvas + setup + draw が揃えば OK
+    // error listener は user script より前に置いて同期エラーも拾う。
+    // timeout は p5 CDN フェッチ + 実行時間を考慮して 5s（validation 専用 iframe は毎回 CDN fetch）
+    _validateCode(code) {
+      return new Promise((resolve) => {
+        const tok = "v" + this._nextId++;
+        const preHarness = `(() => {
+          window.__VIBE_TOK = ${JSON.stringify(tok)};
+          window.__VIBE_DONE = false;
+          window.__VIBE_SEND = (p) => { if (window.__VIBE_DONE) return; window.__VIBE_DONE = true; parent.postMessage(Object.assign({type:'vibe-val', tok:window.__VIBE_TOK}, p), '*'); };
+          window.addEventListener('error', (e) => window.__VIBE_SEND({ok:false, msg:(e && e.message) || 'error'}));
+          window.addEventListener('unhandledrejection', (e) => window.__VIBE_SEND({ok:false, msg:String(e && e.reason)}));
+        })();`;
+        const postHarness = `(() => {
+          setTimeout(() => {
+            const hasCanvas = !!document.querySelector('canvas');
+            const hasSetup = typeof setup === 'function';
+            const hasDraw = typeof draw === 'function';
+            if (hasCanvas && hasSetup && hasDraw) window.__VIBE_SEND({ok:true});
+            else window.__VIBE_SEND({ok:false, msg:'canvas/setup/draw 未生成'});
+          }, 1500);
+        })();`;
+        const srcdoc = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<script>${preHarness}<\/script>
+<script src="${this.P5_CDN}"><\/script>
+</head><body><script>${code}<\/script><script>${postHarness}<\/script></body></html>`;
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("sandbox", "allow-scripts");
+        iframe.style.cssText = "position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none";
+        let settled = false;
+        const cleanup = () => { if (settled) return; settled = true; try { iframe.remove(); } catch (_) {} window.removeEventListener("message", handler); };
+        const handler = (e) => {
+          const d = e.data;
+          if (!d || d.type !== "vibe-val" || d.tok !== tok) return;
+          cleanup();
+          resolve({ ok: !!d.ok, msg: d.msg });
+        };
+        window.addEventListener("message", handler);
+        setTimeout(() => { if (!settled) { cleanup(); resolve({ ok: false, msg: "timeout" }); } }, 5000);
+        iframe.srcdoc = srcdoc;
+        document.body.appendChild(iframe);
       });
     },
 
@@ -348,9 +391,16 @@ ${code}
         const explanation = cleanedFull.replace(/```[\s\S]*?```/g, "").trim() || "できたよ！";
 
         if (code && typingIdx !== -1) {
-          this.messages[typingIdx].codeBlock = code;
-          this.messages[typingIdx].text = explanation;
-          this.openCodePreview(code);
+          const valid = await this._validateCode(code);
+          if (valid.ok) {
+            this.messages[typingIdx].codeBlock = code;
+            this.messages[typingIdx].text = explanation;
+            this.openCodePreview(code);
+          } else {
+            console.warn("[vibeApp] コード検証失敗:", valid.msg);
+            this.messages[typingIdx].text = "うまく つくれなかった…もういちど おねがい！";
+            this.messages[typingIdx].error = true;
+          }
         }
       } catch (err) {
         console.error("[vibeApp] generateResponse 失敗:", err);
