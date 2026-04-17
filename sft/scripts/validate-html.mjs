@@ -101,6 +101,15 @@ for (let i = 0; i < samples.length; i++) {
     reasons.push("network_call");
     pass = false;
   }
+  // sandbox iframe で SecurityError になる API を検知
+  if (/localStorage|sessionStorage|document\.cookie/.test(code)) {
+    reasons.push("storage_api_blocked");
+    pass = false;
+  }
+  if (/\balert\s*\(|\bconfirm\s*\(|\bprompt\s*\(|window\.open/.test(code)) {
+    reasons.push("modal_api_blocked");
+    pass = false;
+  }
 
   // --- Static checks done, skip browser if already failed ---
   if (!pass) {
