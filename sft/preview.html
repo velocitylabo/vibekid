@@ -21,6 +21,12 @@
   iframe { width: 100%; height: 400px; border: 0; display: block; background: #fff; }
   .error { padding: 12px; color: #ff6b6b; text-align: center; font-size: 0.8rem; }
   .code-toggle { padding: 6px 10px; background: #333; border: none; color: #ccc; cursor: pointer; font-size: 0.75rem; width: 100%; text-align: left; border-top: 1px solid #333; }
+  .copy-prompt { padding: 6px 10px; background: #2a4a6a; border: none; color: #fff; cursor: pointer; font-size: 0.75rem; width: 100%; text-align: left; border-top: 1px solid #333; }
+  .copy-prompt:hover { background: #3a5a7a; }
+  .mark-reviewed { padding: 6px 10px; background: #2e5a2e; border: none; color: #fff; cursor: pointer; font-size: 0.75rem; width: 100%; text-align: left; border-top: 1px solid #333; }
+  .mark-reviewed:hover { background: #3e6a3e; }
+  .card.reviewed { opacity: 0.35; }
+  .card.reviewed .mark-reviewed { background: #555; }
   pre { margin: 0; padding: 10px; background: #0a0a18; color: #ccc; font-size: 0.72rem; overflow-x: auto; max-height: 200px; }
 </style>
 </head>
@@ -43,6 +49,9 @@
     <option>hard</option>
   </select>
   <button id="reload">reload</button>
+  <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="f-hide-reviewed"> hide reviewed</label>
+  <button id="mark-visible">mark all visible as reviewed</button>
+  <button id="clear-reviewed" style="background:#663333;">clear reviewed</button>
   <span id="stats" style="margin-left: auto;"></span>
 </div>
 <div class="grid" id="grid"></div>
@@ -62,6 +71,14 @@ ${code}
 }
 
 let allSamples = [];
+let lazyObserver = null;
+
+const REVIEWED_KEY = "preview.reviewed.v1";
+function normPrompt(t) { return (t || "").normalize("NFKC").replace(/\s+/g, ""); }
+let reviewedSet = new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || "[]"));
+function saveReviewed() {
+  localStorage.setItem(REVIEWED_KEY, JSON.stringify([...reviewedSet]));
+}
 
 async function load() {
   const res = await fetch("./data/sft.jsonl");
@@ -74,19 +91,35 @@ async function load() {
 function render() {
   const cat = document.getElementById("f-cat").value;
   const diff = document.getElementById("f-diff").value;
+  const hideRev = document.getElementById("f-hide-reviewed").checked;
   const filtered = allSamples.filter((s) =>
-    (!cat || s.category === cat) && (!diff || s.difficulty === diff)
+    (!cat || s.category === cat) &&
+    (!diff || s.difficulty === diff) &&
+    (!hideRev || !reviewedSet.has(normPrompt(s.prompt)))
   );
 
-  const stats = {};
-  for (const s of filtered) {
-    const key = s.category + "/" + s.difficulty;
-    stats[key] = (stats[key] || 0) + 1;
-  }
-  document.getElementById("stats").textContent = `showing ${filtered.length} / ${allSamples.length}`;
+  const reviewedCount = allSamples.filter((s) => reviewedSet.has(normPrompt(s.prompt))).length;
+  document.getElementById("stats").textContent =
+    `showing ${filtered.length} / ${allSamples.length} · reviewed ${reviewedCount}`;
 
   const grid = document.getElementById("grid");
   grid.innerHTML = "";
+
+  if (lazyObserver) lazyObserver.disconnect();
+  lazyObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const iframe = entry.target;
+      if (entry.isIntersecting) {
+        if (!iframe.srcdoc) {
+          iframe.srcdoc = wrapP5(iframe.dataset.code || "");
+        }
+      } else {
+        // 画面外に出たら停止してメモリ解放
+        if (iframe.srcdoc) iframe.srcdoc = "";
+      }
+    }
+  }, { rootMargin: "200px 0px", threshold: 0 });
+
   for (const s of filtered) {
     const card = document.createElement("div");
     card.className = "card";
@@ -99,10 +132,14 @@ function render() {
           <span class="tech"></span>
         </div>
       </div>
-      <iframe sandbox="allow-scripts"></iframe>
+      <iframe sandbox="allow-scripts" loading="lazy"></iframe>
+      <button class="mark-reviewed" title="review 済みマーク">✓ mark reviewed</button>
       <button class="code-toggle">show code ▼</button>
+      <button class="copy-prompt" title="prompt をコピー">📋 copy prompt</button>
       <pre style="display:none"></pre>
     `;
+    const norm = normPrompt(s.prompt);
+    if (reviewedSet.has(norm)) card.classList.add("reviewed");
     card.querySelector(".prompt").textContent = s.prompt;
     card.querySelector(".tag.category").textContent = s.category;
     const diffTag = card.querySelector(".tag.diff");
@@ -110,7 +147,8 @@ function render() {
     diffTag.classList.add(s.difficulty);
     card.querySelector(".tech").textContent = (s.techniques || []).slice(0, 3).join(", ");
     const iframe = card.querySelector("iframe");
-    iframe.srcdoc = wrapP5(s.code || "");
+    iframe.dataset.code = s.code || "";
+    lazyObserver.observe(iframe);
     const btn = card.querySelector(".code-toggle");
     const pre = card.querySelector("pre");
     pre.textContent = s.code;
@@ -119,13 +157,61 @@ function render() {
       pre.style.display = hidden ? "block" : "none";
       btn.textContent = hidden ? "hide code ▲" : "show code ▼";
     };
+    const copyBtn = card.querySelector(".copy-prompt");
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(s.prompt).then(() => {
+        copyBtn.textContent = "✓ copied";
+        setTimeout(() => { copyBtn.textContent = "📋 copy prompt"; }, 1200);
+      });
+    };
+    const markBtn = card.querySelector(".mark-reviewed");
+    markBtn.onclick = () => {
+      if (reviewedSet.has(norm)) {
+        reviewedSet.delete(norm);
+        card.classList.remove("reviewed");
+        markBtn.textContent = "✓ mark reviewed";
+      } else {
+        reviewedSet.add(norm);
+        card.classList.add("reviewed");
+        markBtn.textContent = "↩ un-review";
+      }
+      saveReviewed();
+      updateStats();
+    };
+    if (reviewedSet.has(norm)) markBtn.textContent = "↩ un-review";
     grid.appendChild(card);
   }
 }
 
+function updateStats() {
+  const reviewedCount = allSamples.filter((s) => reviewedSet.has(normPrompt(s.prompt))).length;
+  const filteredCount = document.querySelectorAll(".card").length;
+  document.getElementById("stats").textContent =
+    `showing ${filteredCount} / ${allSamples.length} · reviewed ${reviewedCount}`;
+}
+
 document.getElementById("f-cat").onchange = render;
 document.getElementById("f-diff").onchange = render;
+document.getElementById("f-hide-reviewed").onchange = render;
 document.getElementById("reload").onclick = load;
+document.getElementById("mark-visible").onclick = () => {
+  document.querySelectorAll(".card").forEach((c) => {
+    const p = c.querySelector(".prompt").textContent;
+    reviewedSet.add(normPrompt(p));
+    c.classList.add("reviewed");
+    const mb = c.querySelector(".mark-reviewed");
+    if (mb) mb.textContent = "↩ un-review";
+  });
+  saveReviewed();
+  render();
+};
+document.getElementById("clear-reviewed").onclick = () => {
+  if (confirm("reviewed マークを全部消しますか?")) {
+    reviewedSet.clear();
+    saveReviewed();
+    render();
+  }
+};
 
 load().catch((e) => {
   document.getElementById("grid").innerHTML = `<div class="error">Error: ${e.message}</div>`;
