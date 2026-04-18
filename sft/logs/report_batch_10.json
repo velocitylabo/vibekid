@@ -1,0 +1,13 @@
+{
+  "total": 50,
+  "passed": 48,
+  "failed": 2,
+  "dedupSkipped": 0,
+  "appended": 48,
+  "yieldRate": "96.0%",
+  "appendRate": "96.0%",
+  "failReasons": {
+    "storage_api_blocked": 1,
+    "canvas_blank": 1
+  }
+}

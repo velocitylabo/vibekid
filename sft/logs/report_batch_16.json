@@ -1,0 +1,14 @@
+{
+  "total": 48,
+  "passed": 45,
+  "failed": 3,
+  "dedupSkipped": 0,
+  "appended": 45,
+  "yieldRate": "93.8%",
+  "appendRate": "93.8%",
+  "failReasons": {
+    "canvas_blank": 1,
+    "js_error": 2,
+    "no_canvas": 1
+  }
+}

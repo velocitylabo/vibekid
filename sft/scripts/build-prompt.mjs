@@ -36,6 +36,7 @@ const { values: args } = parseArgs({
     out:         { type: "string", default: join(SFT_ROOT, "data", "sft.jsonl") },
     "raw-dir":   { type: "string", default: join(SFT_ROOT, "data", "raw") },
     "dry-run":   { type: "boolean", default: false },
+    "skip-validate": { type: "boolean", default: false },
   },
 });
 
@@ -729,23 +730,27 @@ writeFileSync(rawPath, JSON.stringify(allSamples, null, 2));
 console.log(`[build-prompt] raw saved: ${rawPath}`);
 
 // --- Validate (Playwright) ---
-const validateScript = join(__dirname, "validate-html.mjs");
-const validateIn = join(rawDir, `_validate_tmp_${batchId}.json`);
-writeFileSync(validateIn, JSON.stringify(allSamples));
+if (args["skip-validate"]) {
+  console.log(`[build-prompt] skip-validate: raw のみ保存 → ${rawPath}`);
+  console.log(`  次のステップ: node sft/scripts/validate-html.mjs --in=${rawPath} --out=${args.out} --report=sft/logs/report_${batchId}.json`);
+} else {
+  const validateScript = join(__dirname, "validate-html.mjs");
+  const validateIn = join(rawDir, `_validate_tmp_${batchId}.json`);
+  writeFileSync(validateIn, JSON.stringify(allSamples));
 
-const reportPath = join(rawDir, `report_${batchId}.json`);
-try {
-  execFileSync(process.execPath, [
-    validateScript,
-    `--in=${validateIn}`,
-    `--out=${args.out}`,
-    `--report=${reportPath}`,
-  ], { stdio: "inherit", timeout: 120000, cwd: SFT_ROOT });
-} catch (e) {
-  console.error("[build-prompt] validate 失敗:", e.message);
+  const reportPath = join(rawDir, `report_${batchId}.json`);
+  try {
+    execFileSync(process.execPath, [
+      validateScript,
+      `--in=${validateIn}`,
+      `--out=${args.out}`,
+      `--report=${reportPath}`,
+    ], { stdio: "inherit", timeout: 120000, cwd: SFT_ROOT });
+  } catch (e) {
+    console.error("[build-prompt] validate 失敗:", e.message);
+  }
+
+  try { const { unlinkSync } = await import("fs"); unlinkSync(validateIn); } catch {}
 }
-
-// Cleanup temp file
-try { const { unlinkSync } = await import("fs"); unlinkSync(validateIn); } catch {}
 
 console.log(`[build-prompt] 完了: ${allSamples.length} generated → ${rawPath}`);
