@@ -29,6 +29,7 @@ const { values: args } = parseArgs({
     in:                 { type: "string", default: "sft/data/sft.jsonl" },
     "out-train":        { type: "string", default: "sft/data/train.jsonl" },
     "out-eval":         { type: "string", default: "sft/data/eval.jsonl" },
+    "out-system-prompt":{ type: "string", default: "sft/data/SYSTEM_PROMPT.txt" },
     "eval-per-category":{ type: "string", default: "20" },
     seed:               { type: "string", default: "42" },
   },
@@ -132,6 +133,7 @@ const evalShuffled = shuffle(evalSamples, rng);
 
 writeFileSync(args["out-train"], trainShuffled.map((s) => JSON.stringify(toRecord(s))).join("\n") + "\n");
 writeFileSync(args["out-eval"],  evalShuffled.map((s) => JSON.stringify(toRecord(s))).join("\n") + "\n");
+writeFileSync(args["out-system-prompt"], SYSTEM_PROMPT);
 
 // --- Stats ---
 const evalCatCounts = {};

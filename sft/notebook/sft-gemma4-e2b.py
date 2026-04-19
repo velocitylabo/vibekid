@@ -10,7 +10,7 @@
 # %% [markdown]
 # # Gemma 4 E2B SFT — VibeKid
 #
-# **Status: 骨組み (4/19)。本番 run は 4/25 Colab Pro で実行**
+# **Status: 骨組み + checkpoint resume 対応 (4/19)。本番 run は 4/25 Colab Pro で実行**
 #
 # - Model: `unsloth/gemma-4-E2B-it`
 # - LoRA r=16 α=32, text decoder のみ（multi-modal 層汚染防止）
@@ -31,6 +31,17 @@
 # 5. SFTTrainer で 1 epoch
 # 6. eval loss + 数サンプル生成テスト
 # 7. LoRA adapter 保存、merged weight エクスポート
+#
+# **Colab へのアップロード手順**:
+# 1. ローカルで jupytext インストール済なら `jupytext --to ipynb sft-gemma4-e2b.py` で `.ipynb` 生成
+# 2. または Colab 上で「ファイル > アップロード」に `.py` を直接投げても変換される
+# 3. データは `sft/data/train.jsonl` / `eval.jsonl` を Drive `/MyDrive/vibekid-sft-data/` に配置
+# 4. `SYSTEM_PROMPT.txt` も同じ Drive ディレクトリに置く
+#
+# **checkpoint resume 設計**:
+# - Drive 配下 `/MyDrive/vibekid-sft-ckpt/` に save_steps ごと書き出し → 12h セッション切れても resume 可能
+# - 再接続後、同じ notebook を実行すれば `get_last_checkpoint` で自動 resume
+# - `DRY_RUN = True` で 10 件 / 20 step / save_steps=5 の kill→resume リハ可能
 
 # %% [markdown]
 # ## 0. 環境確認（Colab Pro T4 想定）
@@ -49,6 +60,46 @@
 # !pip install --quiet --no-deps "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 # !pip install --quiet --no-deps trl peft accelerate bitsandbytes
 # !pip install --quiet datasets xformers
+
+# %% [markdown]
+# ## 1b. Google Drive mount + checkpoint ディレクトリ
+#
+# **12h セッション切れ対策**: checkpoint と merged weight は全て Drive に永続化する。
+# 再接続時は同じセル群をそのまま実行すれば `get_last_checkpoint` 経由で resume。
+
+# %%
+import os
+
+IS_COLAB = False
+try:
+    from google.colab import drive  # type: ignore
+    drive.mount("/content/drive")
+    IS_COLAB = True
+except ImportError:
+    print("[warn] google.colab not available — ローカル実行とみなす")
+
+CKPT_DIR = "/content/drive/MyDrive/vibekid-sft-ckpt" if IS_COLAB else "./vibekid-sft-ckpt"
+DATA_DIR = "/content/drive/MyDrive/vibekid-sft-data" if IS_COLAB else "./sft/data"
+MERGED_DIR = "/content/drive/MyDrive/vibekid-sft-merged" if IS_COLAB else "./vibekid-sft-merged"
+
+os.makedirs(CKPT_DIR, exist_ok=True)
+os.makedirs(MERGED_DIR, exist_ok=True)
+
+print(f"[paths] CKPT_DIR={CKPT_DIR}")
+print(f"[paths] DATA_DIR={DATA_DIR}")
+print(f"[paths] MERGED_DIR={MERGED_DIR}")
+
+# %% [markdown]
+# ## 1c. Dry-run フラグ（checkpoint resume リハ用）
+#
+# - `DRY_RUN = True` にすると 10 件 / 20 step / save_steps=5 の最小構成で走る
+# - 4/19-24 の間に「5 step 回したあと Colab ランタイムを手動切断 → 再接続 → 同じ notebook 再実行 → resume できるか」を検証
+# - 本番 4/25 は `DRY_RUN = False` に戻すこと
+
+# %%
+DRY_RUN = False
+
+print(f"[dry-run] {'ENABLED' if DRY_RUN else 'disabled'}")
 
 # %% [markdown]
 # ## 2. モデル + tokenizer ロード
@@ -106,8 +157,8 @@ model.print_trainable_parameters()
 # %%
 from datasets import load_dataset
 
-TRAIN_PATH = "/content/sft/data/train.jsonl"
-EVAL_PATH  = "/content/sft/data/eval.jsonl"
+TRAIN_PATH = os.path.join(DATA_DIR, "train.jsonl")
+EVAL_PATH  = os.path.join(DATA_DIR, "eval.jsonl")
 
 dataset = load_dataset(
     "json",
@@ -144,11 +195,34 @@ print(dataset["train"][0]["text"][:400], "...")
 # %%
 from trl import SFTTrainer, SFTConfig
 
+# DRY_RUN で最小構成に差し替え（kill→resume リハ用）
+if DRY_RUN:
+    train_ds = dataset["train"].select(range(min(10, len(dataset["train"]))))
+    eval_ds  = dataset["eval"].select(range(min(3, len(dataset["eval"]))))
+    sft_kwargs = dict(
+        num_train_epochs=2,
+        max_steps=20,
+        logging_steps=1,
+        eval_steps=5,
+        save_steps=5,
+        save_total_limit=4,
+    )
+    print(f"[dry-run] train={len(train_ds)}, eval={len(eval_ds)}, save_steps=5")
+else:
+    train_ds = dataset["train"]
+    eval_ds  = dataset["eval"]
+    sft_kwargs = dict(
+        num_train_epochs=1,
+        logging_steps=10,
+        eval_steps=50,
+        save_steps=100,
+        save_total_limit=3,
+    )
+
 training_args = SFTConfig(
-    output_dir="/content/sft-gemma4-e2b-out",
+    output_dir=CKPT_DIR,                 # Drive 永続化（12h 切れ対策）
     per_device_train_batch_size=1,
     gradient_accumulation_steps=8,       # 実効 batch = 8
-    num_train_epochs=1,
     learning_rate=2e-4,                  # LoRA SFT 標準
     warmup_ratio=0.03,
     lr_scheduler_type="cosine",
@@ -156,32 +230,49 @@ training_args = SFTConfig(
     fp16=False,                          # T4 で破綻するため禁止
     optim="adamw_8bit",
     weight_decay=0.01,
-    logging_steps=10,
     eval_strategy="steps",
-    eval_steps=50,
     save_strategy="steps",
-    save_steps=100,
-    save_total_limit=3,
     max_seq_length=MAX_SEQ_LENGTH,
     dataset_text_field="text",
     packing=False,                       # packing は Gemma 4 で検証不足
     report_to="none",
     seed=42,
+    **sft_kwargs,
 )
 
 trainer = SFTTrainer(
     model=model,
     tokenizer=tokenizer,
-    train_dataset=dataset["train"],
-    eval_dataset=dataset["eval"],
+    train_dataset=train_ds,
+    eval_dataset=eval_ds,
     args=training_args,
 )
 
 # %% [markdown]
-# ## 7. Train
+# ## 7. Train（checkpoint resume 対応）
+#
+# - CKPT_DIR に既存 checkpoint があれば自動 resume
+# - 無ければ新規スタート
+# - 12h セッション切れ後、このセルを再実行するだけで最後の checkpoint から継続
+# - dry-run リハ手順: `DRY_RUN=True` で 5 step 回ったら「ランタイム > ランタイムを接続解除して削除」→ 再接続 → 本セル再実行 → resume できれば成功
 
 # %%
-trainer_stats = trainer.train()
+from transformers.trainer_utils import get_last_checkpoint
+
+last_ckpt = None
+if os.path.isdir(CKPT_DIR):
+    try:
+        last_ckpt = get_last_checkpoint(CKPT_DIR)
+    except Exception as e:
+        print(f"[resume] get_last_checkpoint failed: {e}")
+
+if last_ckpt:
+    print(f"[resume] resuming from {last_ckpt}")
+    trainer_stats = trainer.train(resume_from_checkpoint=last_ckpt)
+else:
+    print("[resume] no checkpoint found, starting fresh")
+    trainer_stats = trainer.train()
+
 print(trainer_stats)
 
 # %% [markdown]
@@ -192,8 +283,10 @@ eval_stats = trainer.evaluate()
 print("eval:", eval_stats)
 
 # %%
+SYSTEM_PROMPT_PATH = os.path.join(DATA_DIR, "SYSTEM_PROMPT.txt")
+
 def gen(user_text, max_new_tokens=400):
-    SYSTEM = open("/content/sft/scripts/SYSTEM_PROMPT.txt").read().strip()  # prepare-train.mjs と同じ本文
+    SYSTEM = open(SYSTEM_PROMPT_PATH).read().strip()  # prepare-train.mjs と同じ本文
     messages = [{"role": "user", "content": f"{SYSTEM}\n\n{user_text}"}]
     inputs = tokenizer.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
@@ -216,10 +309,11 @@ for prompt in ["ぴょんぴょんはねるねこをつくって", "はなびが
 # ## 9. LoRA adapter 保存 + merged weight export
 #
 # LiteRT-LM web 配信用に merged で書き出す。変換は別環境で `ai-edge-torch` を使う。
+# Drive に保存して 12h 切れ後も手元に残るようにする。
 
 # %%
-OUT_ADAPTER = "/content/sft-gemma4-e2b-lora"
-OUT_MERGED  = "/content/sft-gemma4-e2b-merged"
+OUT_ADAPTER = os.path.join(MERGED_DIR, "lora")
+OUT_MERGED  = os.path.join(MERGED_DIR, "merged_16bit")
 
 model.save_pretrained(OUT_ADAPTER)
 tokenizer.save_pretrained(OUT_ADAPTER)
@@ -236,7 +330,11 @@ print(f"[save] merged -> {OUT_MERGED}")
 # %% [markdown]
 # ## 10. 次のステップ（本ノートブックの外）
 #
-# 1. `OUT_MERGED` を Google Drive に退避（Colab 12h セッション切れ対策）
+# 1. `OUT_MERGED`（= Drive）から手元 RTX 2060 環境に `rclone` / Drive 共有リンクで回収
 # 2. `ai-edge-torch` で `.task` / `.litertlm` に変換（別 notebook、4/30〜）
 # 3. `sft/scripts/evaluate.mjs` で exec_success_rate 測定（base vs SFT）
 # 4. RAFT Round 1 の reward 計算用に LoRA adapter を temporary で利用
+#
+# **Google One 5/11 失効前の cleanup**:
+# - 5/10 までに `OUT_MERGED` を手元にバックアップ後、CKPT_DIR 内の中間 checkpoint を全削除して Drive 使用量を 15GB free tier 内に落とす
+# - `!rm -rf /content/drive/MyDrive/vibekid-sft-ckpt/checkpoint-*` で中間のみ削除可
