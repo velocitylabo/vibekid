@@ -57,6 +57,74 @@ const MODEL_FILE = new URLSearchParams(location.search).get('file')
 const MAX_TOKENS = parseInt(new URLSearchParams(location.search).get('max_tokens') || '1024', 10);
 const TEMPERATURE = parseFloat(new URLSearchParams(location.search).get('temp') || '0.7');
 const TOPK = parseInt(new URLSearchParams(location.search).get('top_k') || '40', 10);
+const SYSTEM_KEY = new URLSearchParams(location.search).get('system') || 'none';
+
+// baseline 比較用 system prompt バリアント
+// - 'none'        : prompt のみ（裸の base、SFT 下限）
+// - 'app-oneshot' : app.js の本番用 system prompt（one-shot 込み、prompt engineering 上限）
+// - 'sft-short'   : prepare-train.mjs と同じ SFT 後用（one-shot 無し）
+const SYSTEM_PROMPTS = {
+  none: '',
+  'app-oneshot': `子供が「〜作って」と言ったら、p5.js のスケッチコードを1つだけ書いてください。
+
+例（「ボールが跳ねる」の場合）:
+\`\`\`js
+let ballX = 200;
+let ballY = 100;
+let ballVY = 0;
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+  ballVY = ballVY + 0.5;
+  ballY = ballY + ballVY;
+  if (ballY > 370) {
+    ballY = 370;
+    ballVY = -10;
+  }
+  fill(255, 100, 100);
+  noStroke();
+  ellipse(ballX, ballY, 50, 50);
+}
+\`\`\`
+
+ルール:
+- 変数は function の外で let で宣言する
+- 関数は必ず setup() と draw() を書く
+- createCanvas(400, 400) を使う
+- background() を draw の最初に呼ぶ
+- 変数名は ballX, bgColor, myScore のような分かりやすい名前を使う
+- p5.js の組み込み関数名（color, fill, background, width, height）を変数名にしない
+- 短く、動くコードだけ書く（20〜40行程度）
+- \`\`\`js で囲んで出力する
+
+同じスタイルで、指示されたものを作ってください:`,
+  'sft-short': `あなたは子供向けプログラミングの先生AIです。
+
+【絶対のルール】
+1. 質問されたら、聞き返さず、すぐに 1 つだけ作って見せます。
+2. 「赤と青どちらがいい?」のような選択肢は出しません。あなたが決めて作ります。
+3. 出力は p5.js のスケッチコード 1 つだけ。\`\`\`js で囲みます。
+4. 必ず setup() と draw() を書き、createCanvas(400, 400) を使います。
+5. 変数は function の外で let で宣言します。
+6. その後に 1〜2 文だけ、何を作ったかを優しい言葉で説明します。
+
+【作るもののスタイル】
+- 小学校低学年が見て楽しいもの
+- 動きや色を多めに
+- p5.js の組み込み関数（color, fill, background, width, height）を変数名にしない
+- 外部ライブラリ・画像 URL・fetch・音源ファイルは使わない
+- コードに日本語コメントを付ける
+
+【絶対にしないこと】
+- 同じ文を繰り返さない
+- 「どんな〜にしますか」「〜と〜どちらがいいですか」と聞かない
+- 解説を長く書かない（コード優先、説明は短く）`,
+};
+const SYSTEM_PROMPT = SYSTEM_PROMPTS[SYSTEM_KEY] ?? '';
 
 let llmInference = null;
 let fileset = null;
@@ -149,12 +217,21 @@ async function runLoad() {
 // --- p5.js sandbox validator ---
 const P5_CDN = 'https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js';
 function wrapP5(code) {
+  // syntax error は try/catch で捕れないので window.onerror で拾う
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<script src="${P5_CDN}"><\\/script>
+<script>
+window.addEventListener('error', function(e) {
+  window.parent.postMessage({__evalError: (e.error && e.error.message) || e.message || String(e)}, '*');
+});
+window.addEventListener('unhandledrejection', function(e) {
+  window.parent.postMessage({__evalError: 'unhandled: ' + (e.reason && e.reason.message || String(e.reason))}, '*');
+});
+<\/script>
+<script src="${P5_CDN}"><\/script>
 <style>html,body{margin:0;padding:0;background:#fff}canvas{display:block}</style>
 </head><body><script>
 try { ${code} } catch (e) { window.parent.postMessage({__evalError: String(e)}, '*'); }
-<\\/script></body></html>`;
+<\/script></body></html>`;
 }
 
 function extractCode(text) {
@@ -190,7 +267,7 @@ function hasAnimation(code) {
       || /\+\s*=|\-=|\*=/.test(code);
 }
 
-async function runInSandbox(code, timeoutMs = 3000) {
+async function runInSandbox(code, timeoutMs = 5000) {
   return await new Promise((resolve) => {
     const iframe = $('sandbox');
     const consoleErrors = [];
@@ -209,15 +286,22 @@ async function runInSandbox(code, timeoutMs = 3000) {
 
     iframe.onload = async () => {
       try {
-        await new Promise((r) => setTimeout(r, timeoutMs));
-        try {
-          const doc = iframe.contentDocument;
-          const canvas = doc && doc.querySelector('canvas');
-          if (canvas) {
-            const rect = canvas.getBoundingClientRect();
-            canvasInfo = { hasCanvas: true, width: rect.width, height: rect.height };
-          }
-        } catch (_) {}
+        // p5.js CDN load + setup() 呼び出し待ち。canvas 生成を 100ms 間隔で poll
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          try {
+            const doc = iframe.contentDocument;
+            const canvas = doc && doc.querySelector('canvas');
+            if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              canvasInfo = { hasCanvas: true, width: rect.width, height: rect.height };
+              break;
+            }
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        // 見つかっても draw() が一度回る時間を足す（animation / state 反映）
+        if (canvasInfo.hasCanvas) await new Promise((r) => setTimeout(r, 500));
         cleanup();
         resolve({ evalError, consoleErrors, canvasInfo });
       } catch (e) {
@@ -230,9 +314,10 @@ async function runInSandbox(code, timeoutMs = 3000) {
 }
 
 function buildPrompt(userText) {
-  // spike-litert-opfs.html の wrapGemma3Chat と同じ（system prompt なし = base 条件）
-  // SFT 後は prepare-train.mjs 内の SYSTEM_PROMPT を前置する予定
-  return `<start_of_turn>user\n${userText}<end_of_turn>\n<start_of_turn>model\n`;
+  // system='none'  : 裸の base（SFT 下限測定用）
+  // system='app-*' : prompt engineering 適用（SFT vs PE 差分用）
+  const prefix = SYSTEM_PROMPT ? SYSTEM_PROMPT + '\n\n' : '';
+  return `<start_of_turn>user\n${prefix}${userText}<end_of_turn>\n<start_of_turn>model\n`;
 }
 
 async function generate(userText) {
@@ -317,6 +402,7 @@ function summarize(rs) {
   return {
     ts: new Date().toISOString(),
     model: MODEL_FILE,
+    system_key: SYSTEM_KEY,
     max_tokens: MAX_TOKENS,
     temperature: TEMPERATURE,
     top_k: TOPK,

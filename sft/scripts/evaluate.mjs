@@ -36,6 +36,7 @@ const { values: args } = parseArgs({
     "max-tokens":  { type: "string", default: "1024" },
     temperature:   { type: "string", default: "0.7" },
     "top-k":       { type: "string", default: "40" },
+    system:        { type: "string", default: "none" },  // none | app-oneshot | sft-short
     "user-data-dir": { type: "string", default: "sft/.chrome-profile" },
   },
 });
@@ -122,7 +123,8 @@ const url = `http://localhost:${PORT}/sft/eval-runner.html`
   + `&file=${encodeURIComponent(args.file)}`
   + `&max_tokens=${args["max-tokens"]}`
   + `&temp=${args.temperature}`
-  + `&top_k=${args["top-k"]}`;
+  + `&top_k=${args["top-k"]}`
+  + `&system=${encodeURIComponent(args.system)}`;
 console.log(`[eval] navigate: ${url}`);
 await page.goto(url);
 
