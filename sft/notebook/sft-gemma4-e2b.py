@@ -332,8 +332,12 @@ for prompt in ["ぴょんぴょんはねるねこをつくって", "はなびが
 # %% [markdown]
 # ## 9. LoRA adapter 保存 + merged weight export
 #
-# LiteRT-LM web 配信用に merged で書き出す。変換は別環境で `ai-edge-torch` を使う。
-# Drive に保存して 12h 切れ後も手元に残るようにする。
+# - **LoRA adapter は必ず Drive 保存**（~50MB、軽い）。resume / 再評価 / 手元 merge の入口
+# - **merged 16bit（~10GB）は Colab T4 の RAM（~12GB）に収まらず OOM で落ちる**
+#   （2026-04-19 dry-run で実証）。本番でも Colab 内 merge は **NG**
+# - 本番 merge は手元 RTX 2060 Mobile（32GB system RAM）で `FastModel.save_pretrained_merged`
+#   を別途実行、または Colab Pro+ の High-RAM インスタンスを使う
+# - DRY_RUN では merge は常にスキップ
 
 # %%
 OUT_ADAPTER = os.path.join(MERGED_DIR, "lora")
@@ -343,13 +347,20 @@ model.save_pretrained(OUT_ADAPTER)
 tokenizer.save_pretrained(OUT_ADAPTER)
 print(f"[save] adapter -> {OUT_ADAPTER}")
 
-# merged 16bit export（LiteRT 変換用）
-model.save_pretrained_merged(
-    OUT_MERGED,
-    tokenizer,
-    save_method="merged_16bit",
-)
-print(f"[save] merged -> {OUT_MERGED}")
+# merged export は RAM 要件高いので条件付き
+EXPORT_MERGED = False  # Colab T4 (~12GB RAM) では True にすると OOM。手元 or High-RAM 専用
+
+if EXPORT_MERGED and not DRY_RUN:
+    # merged 16bit export（LiteRT 変換用）
+    model.save_pretrained_merged(
+        OUT_MERGED,
+        tokenizer,
+        save_method="merged_16bit",
+    )
+    print(f"[save] merged -> {OUT_MERGED}")
+else:
+    print("[skip] merged export（EXPORT_MERGED=False or DRY_RUN）")
+    print(f"       手元 32GB RAM 環境で adapter {OUT_ADAPTER} を読み込んで merge してください")
 
 # %% [markdown]
 # ## 10. 次のステップ（本ノートブックの外）
