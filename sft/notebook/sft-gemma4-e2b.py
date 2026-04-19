@@ -196,6 +196,12 @@ print(dataset["train"][0]["text"][:400], "...")
 # %%
 from trl import SFTTrainer, SFTConfig
 
+# GPU 対応 dtype 判定: T4 (Turing) は bf16 非対応、L4/A100 (Ampere+) のみ bf16 可
+# Colab Pro はランタイム抽選で T4 / L4 どちらも来る → 自動切替
+USE_BF16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+USE_FP16 = torch.cuda.is_available() and not USE_BF16
+print(f"[dtype] bf16={USE_BF16} fp16={USE_FP16} (device={torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu'})")
+
 # DRY_RUN で最小構成に差し替え（kill→resume リハ用）
 if DRY_RUN:
     train_ds = dataset["train"].select(range(min(10, len(dataset["train"]))))
@@ -227,8 +233,8 @@ training_args = SFTConfig(
     learning_rate=2e-4,                  # LoRA SFT 標準
     warmup_ratio=0.03,
     lr_scheduler_type="cosine",
-    bf16=True,
-    fp16=False,                          # T4 で破綻するため禁止
+    bf16=USE_BF16,                       # L4/A100 で True
+    fp16=USE_FP16,                       # T4 で True（Unsloth が overflow 対策を入れる）
     optim="adamw_8bit",
     weight_decay=0.01,
     eval_strategy="steps",
