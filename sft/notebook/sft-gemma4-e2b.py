@@ -284,8 +284,20 @@ print(trainer_stats)
 
 # %% [markdown]
 # ## 8. Eval loss + サンプル生成
+#
+# **注意**: transformers の `NotebookProgressCallback` は train 完了後に `training_tracker=None` に
+# なるため、その直後に `trainer.evaluate()` を呼ぶと `on_train_begin must be called before on_evaluate`
+# で落ちる。ここでは通常の `ProgressCallback` に差し替えてから評価する（既知の workaround）。
 
 # %%
+from transformers.trainer_callback import ProgressCallback
+from transformers.utils.notebook import NotebookProgressCallback
+
+for cb in list(trainer.callback_handler.callbacks):
+    if isinstance(cb, NotebookProgressCallback):
+        trainer.callback_handler.remove_callback(cb)
+trainer.callback_handler.add_callback(ProgressCallback())
+
 eval_stats = trainer.evaluate()
 print("eval:", eval_stats)
 
