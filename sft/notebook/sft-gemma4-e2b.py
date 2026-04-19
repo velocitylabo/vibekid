@@ -54,12 +54,13 @@
 # %% [markdown]
 # ## 1. Unsloth + 依存インストール
 #
-# Colab でのみ実行。ローカル Linux GPU で試すなら pip 版を manual 指定。
+# Colab 用。`unsloth_zoo` は Unsloth の sidecar（2026 以降必須、忘れると
+# `PackageNotFoundError: unsloth_zoo` で落ちる）。install 後はランタイム再起動が安全。
+# ローカル Linux GPU で試す場合は本セルをスキップして先に手動で venv を作ること。
 
 # %%
-# !pip install --quiet --no-deps "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-# !pip install --quiet --no-deps trl peft accelerate bitsandbytes
-# !pip install --quiet datasets xformers
+!pip install --quiet --upgrade --no-cache-dir unsloth unsloth_zoo
+!pip install --quiet --no-deps trl peft accelerate bitsandbytes datasets
 
 # %% [markdown]
 # ## 1b. Google Drive mount + checkpoint ディレクトリ
