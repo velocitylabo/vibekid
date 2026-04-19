@@ -306,7 +306,12 @@ SYSTEM_PROMPT_PATH = os.path.join(DATA_DIR, "SYSTEM_PROMPT.txt")
 
 def gen(user_text, max_new_tokens=400):
     SYSTEM = open(SYSTEM_PROMPT_PATH).read().strip()  # prepare-train.mjs と同じ本文
-    messages = [{"role": "user", "content": f"{SYSTEM}\n\n{user_text}"}]
+    # Gemma 4 processor は multimodal 対応のため content は list[{type,text}] 形式必須
+    # string 直渡しは tokenize=True 経路で `string indices must be integers` で落ちる（4/19 検証済）
+    messages = [{
+        "role": "user",
+        "content": [{"type": "text", "text": f"{SYSTEM}\n\n{user_text}"}],
+    }]
     inputs = tokenizer.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
     ).to("cuda")
