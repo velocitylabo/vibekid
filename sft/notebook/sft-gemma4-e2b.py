@@ -360,7 +360,9 @@ if EXPORT_MERGED and not DRY_RUN:
     print(f"[save] merged -> {OUT_MERGED}")
 else:
     print("[skip] merged export（EXPORT_MERGED=False or DRY_RUN）")
-    print(f"       手元 32GB RAM 環境で adapter {OUT_ADAPTER} を読み込んで merge してください")
+    print(f"       adapter: {OUT_ADAPTER}")
+    print("       merge 環境は Issue #121 で調査中（merged_4bit が ai-edge-torch 入力 OK なら Colab 完結）")
+    print("       手元 RTX 2060 Mobile 16GB RAM は swap 併用で OOM リスク 50/50、cloud CPU 1h (~$0.5) が確実")
 
 # %% [markdown]
 # ## 10. 次のステップ（本ノートブックの外）
