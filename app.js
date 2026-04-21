@@ -157,8 +157,11 @@ document.addEventListener("alpine:init", () => {
         const t0 = performance.now();
 
         // primary は OPFS + modelAssetBuffer、失敗時は modelAssetPath に fallback
+        // ?forceFallback=1 で modelAssetPath 経路を強制再現（審査員環境検証用）
+        const forceFallback = new URLSearchParams(location.search).get("forceFallback") === "1";
         let hit = false;
         try {
+          if (forceFallback) throw new Error("forced fallback (query param)");
           const result = await loadModelWithCache(MODEL_URL, MODEL_FILE, ({ phase, bytes, total }) => {
             if (total) {
               this.loadPct = Math.round((bytes / total) * 100);
