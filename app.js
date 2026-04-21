@@ -310,8 +310,10 @@ function draw() {
     wrapP5(code) {
       // p5.js CDN をロードする iframe 用 HTML を組み立てる
       // canvas を iframe viewport に収める: flex center + max 100% で縦横比を保ったまま縮小
+      // CSP: default-src 'none' で全遮断 → p5 CDN と inline のみ許可、connect-src で外部通信遮断
       return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
 <script src="${this.P5_CDN}"><\/script>
 <style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
@@ -351,6 +353,7 @@ ${code}
           }, 1500);
         })();`;
         const srcdoc = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <script>${preHarness}<\/script>
 <script src="${this.P5_CDN}"><\/script>
 </head><body><script>${code}<\/script><script>${postHarness}<\/script></body></html>`;
