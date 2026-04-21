@@ -404,14 +404,36 @@ ${code}
 
       const typingIdx = this.messages.findIndex((m) => m.id === typingId);
 
+      let heartbeatId = null;
       try {
         const prompt = this._buildPrompt(text);
         console.log("[vibeApp] prompt length:", prompt.length);
+
         let fullText = "";
+        let streamerFires = 0;
+        let tFirstToken = 0;
+        const tGenStart = performance.now();
 
-        if (typingIdx !== -1) this.messages[typingIdx].isTyping = false;
+        // 初回トークン到達まで 5s 毎に heartbeat (hang と TTFT 遅延の切り分け用)
+        heartbeatId = setInterval(() => {
+          if (tFirstToken === 0) {
+            console.log("[vibeApp] generate heartbeat (pre-first-token)", {
+              elapsedMs: Math.round(performance.now() - tGenStart),
+            });
+          }
+        }, 5000);
 
+        console.log("[vibeApp] generate start");
         await this.llm.generateResponse(prompt, (partial, done) => {
+          streamerFires++;
+          if (streamerFires === 1) {
+            tFirstToken = performance.now();
+            console.log("[vibeApp] first streamer fire (TTFT)", {
+              ttftMs: Math.round(tFirstToken - tGenStart),
+            });
+            // 初回トークン到達時に typing indicator を外してテキスト表示へ
+            if (typingIdx !== -1) this.messages[typingIdx].isTyping = false;
+          }
           fullText += partial;
           const cleaned = fullText.replace(/^>+\s*/, "");
           if (typingIdx !== -1) {
@@ -419,6 +441,26 @@ ${code}
           }
           this.scrollToBottom();
         });
+
+        const tGenEnd = performance.now();
+        const decodeMs = tFirstToken > 0 ? tGenEnd - tFirstToken : 0;
+        const approxTokens = Math.round(fullText.length / 4); // 英語想定の概算 (#124 bench と同じ)
+        console.log("[vibeApp] generate done", {
+          totalMs: Math.round(tGenEnd - tGenStart),
+          ttftMs: tFirstToken > 0 ? Math.round(tFirstToken - tGenStart) : "n/a",
+          decodeMs: Math.round(decodeMs),
+          streamerFires,
+          outputChars: fullText.length,
+          approxTokens,
+          chunksPerSec: decodeMs > 0 ? (streamerFires / (decodeMs / 1000)).toFixed(1) : "n/a",
+          decodeTokS: decodeMs > 0 ? (approxTokens / (decodeMs / 1000)).toFixed(1) : "n/a",
+        });
+
+        if (heartbeatId) { clearInterval(heartbeatId); heartbeatId = null; }
+        // streamer が一度も発火しない異常ケースでも typing indicator を外す
+        if (typingIdx !== -1 && this.messages[typingIdx].isTyping) {
+          this.messages[typingIdx].isTyping = false;
+        }
 
         // generateResponse 完了後（WASM コールバック外）でコード抽出・プレビュー
         const cleanedFull = fullText.replace(/^>+\s*/, "");
@@ -448,6 +490,7 @@ ${code}
           isTyping: false,
         });
       } finally {
+        if (heartbeatId) clearInterval(heartbeatId);
         this.isGenerating = false;
         this.$nextTick(() => {
           this.scrollToBottom();
