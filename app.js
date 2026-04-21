@@ -101,6 +101,8 @@ document.addEventListener("alpine:init", () => {
     previewCode: "",
     darkMode: false,
     _nextId: 1,
+    _heartbeatState: null,
+    _lastUserText: "",
 
     hints: [
       "ねこがぴょんぴょんはねるやつ",
@@ -307,14 +309,22 @@ function draw() {
       return null;
     },
 
-    wrapP5(code) {
+    wrapP5(code, tok) {
       // p5.js CDN をロードする iframe 用 HTML を組み立てる
       // canvas を iframe viewport に収める: flex center + max 100% で縦横比を保ったまま縮小
       // CSP: default-src 'none' で全遮断 → p5 CDN と inline のみ許可、connect-src で外部通信遮断
+      // preHarness: 500ms 間隔で parent に heartbeat / error を post、hang 検知と runtime error 共有に使う
+      const preHarness = `(() => {
+        const tok = ${JSON.stringify(tok)};
+        setInterval(() => { try { parent.postMessage({type:'vibe-heartbeat', tok}, '*'); } catch(_) {} }, 500);
+        window.addEventListener('error', (e) => { try { parent.postMessage({type:'vibe-error', tok, msg:(e && e.message) || 'error'}, '*'); } catch(_) {} });
+        window.addEventListener('unhandledrejection', (e) => { try { parent.postMessage({type:'vibe-error', tok, msg:String(e && e.reason)}, '*'); } catch(_) {} });
+      })();`;
       return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
+<script>${preHarness}<\/script>
 <script src="${this.P5_CDN}"><\/script>
 <style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
 </head><body><script>
@@ -324,10 +334,83 @@ ${code}
 
     openCodePreview(code) {
       // code は p5.js スニペット、wrapP5 で iframe 用 HTML に包む
+      this._teardownHeartbeat();
+      const tok = "p" + this._nextId++;
       this.previewCode = "";
       this.$nextTick(() => {
-        this.previewCode = this.wrapP5(code);
+        this.previewCode = this.wrapP5(code, tok);
+        this._startHeartbeatWatch(tok);
       });
+    },
+
+    _startHeartbeatWatch(tok) {
+      // 初回 heartbeat まで 3s の grace（CDN fetch + 初期化を許容）
+      // 初回受信後は 2s 無音で frozen 判定 → iframe をリセットしてエラー UI へ
+      const startTime = Date.now();
+      const state = { gotFirst: false, lastBeat: 0, frozen: false };
+      const handler = (e) => {
+        const d = e.data;
+        if (!d || d.tok !== tok || state.frozen) return;
+        if (d.type === "vibe-heartbeat") {
+          state.gotFirst = true;
+          state.lastBeat = Date.now();
+        } else if (d.type === "vibe-error") {
+          state.frozen = true;
+          this._onPreviewError(d.msg);
+        }
+      };
+      window.addEventListener("message", handler);
+      const timerId = setInterval(() => {
+        if (state.frozen) return;
+        const now = Date.now();
+        if (!state.gotFirst) {
+          if (now - startTime > 3000) {
+            state.frozen = true;
+            this._onPreviewFrozen();
+          }
+        } else if (now - state.lastBeat > 2000) {
+          state.frozen = true;
+          this._onPreviewFrozen();
+        }
+      }, 500);
+      this._heartbeatState = { tok, handler, timerId };
+    },
+
+    _teardownHeartbeat() {
+      if (!this._heartbeatState) return;
+      window.removeEventListener("message", this._heartbeatState.handler);
+      clearInterval(this._heartbeatState.timerId);
+      this._heartbeatState = null;
+    },
+
+    _onPreviewFrozen() {
+      console.warn("[vibeApp] preview frozen (heartbeat timeout)");
+      this.previewCode = "";
+      this._teardownHeartbeat();
+      if (this._lastUserText) this._pushErrorMessage("😵", this._lastUserText);
+    },
+
+    _onPreviewError(msg) {
+      console.warn("[vibeApp] preview runtime error:", msg);
+      this.previewCode = "";
+      this._teardownHeartbeat();
+      if (this._lastUserText) this._pushErrorMessage("🔧", this._lastUserText);
+    },
+
+    _pushErrorMessage(emoji, retryPrompt) {
+      this.messages.push({
+        id: this._nextId++,
+        role: "error",
+        emoji,
+        retryPrompt,
+        isTyping: false,
+      });
+      this.$nextTick(() => this.scrollToBottom());
+    },
+
+    retryPrompt(text) {
+      if (this.isGenerating || !text) return;
+      this.sendMessage(text);
     },
 
     // hidden sandboxed iframe で実行して、エラーなしに canvas + setup + draw が揃えば OK
@@ -376,14 +459,16 @@ ${code}
     },
 
     closeCodePreview() {
+      this._teardownHeartbeat();
       this.previewCode = "";
     },
 
-    async sendMessage() {
-      const text = this.inputText.trim();
+    async sendMessage(retryText) {
+      const text = (retryText || this.inputText).trim();
       if (!text || this.isGenerating || !this.modelReady) return;
 
       this.isGenerating = true;
+      this._lastUserText = text;
 
       this.messages.push({
         id: this._nextId++,
@@ -392,7 +477,7 @@ ${code}
         isTyping: false,
       });
 
-      this.inputText = "";
+      if (!retryText) this.inputText = "";
       this.$nextTick(() => {
         this.resizeTextarea();
         this.scrollToBottom();
@@ -482,19 +567,14 @@ ${code}
             this.openCodePreview(code);
           } else {
             console.warn("[vibeApp] コード検証失敗:", valid.msg);
-            this.messages[typingIdx].text = "うまく つくれなかった…もういちど おねがい！";
-            this.messages[typingIdx].error = true;
+            if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
+            this._pushErrorMessage("🔧", text);
           }
         }
       } catch (err) {
         console.error("[vibeApp] generateResponse 失敗:", err);
         if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
-        this.messages.push({
-          id: this._nextId++,
-          role: "error",
-          text: "😢",
-          isTyping: false,
-        });
+        this._pushErrorMessage("😢", text);
       } finally {
         if (heartbeatId) clearInterval(heartbeatId);
         this.isGenerating = false;

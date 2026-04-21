@@ -39,17 +39,19 @@
       </button>
     </header>
 
-    <section class="code-preview-panel" x-show="previewCode" x-transition>
-      <div class="code-preview-panel-header">
-        <span class="code-preview-panel-title">&#x1F680; うごくよ！</span>
-        <button class="code-preview-panel-close" @click="closeCodePreview()" title="とじる">&times;</button>
-      </div>
-      <iframe
-        class="code-preview-panel-iframe"
-        sandbox="allow-scripts"
-        :srcdoc="previewCode"
-      ></iframe>
-    </section>
+    <template x-if="previewCode">
+      <section class="code-preview-panel" x-transition>
+        <div class="code-preview-panel-header">
+          <span class="code-preview-panel-title">&#x1F680; うごくよ！</span>
+          <button class="code-preview-panel-close" @click="closeCodePreview()" title="とじる">&times;</button>
+        </div>
+        <iframe
+          class="code-preview-panel-iframe"
+          sandbox="allow-scripts"
+          :srcdoc="previewCode"
+        ></iframe>
+      </section>
+    </template>
 
     <main class="chat-messages" x-ref="chatMessages">
       <div class="welcome-message" x-show="messages.length === 0">
@@ -63,20 +65,35 @@
 
       <template x-for="msg in messages" :key="msg.id">
         <div :class="'message ' + msg.role">
-          <div class="message-label" x-text="msg.role === 'user' ? 'あなた' : 'AI'"></div>
-          <div class="message-bubble">
-            <template x-if="msg.isTyping">
-              <div class="typing-indicator"><span></span><span></span><span></span></div>
-            </template>
-            <template x-if="!msg.isTyping">
-              <span x-text="msg.text"></span>
-            </template>
-          </div>
-          <button
-            class="code-run-chip"
-            x-show="msg.codeBlock && !isGenerating"
-            @click="openCodePreview(msg.codeBlock)"
-          >&#x25B6; もういちど うごかす</button>
+          <template x-if="msg.role === 'error'">
+            <div class="error-card">
+              <div class="error-emoji" x-text="msg.emoji || '😵'"></div>
+              <button
+                class="error-retry"
+                x-show="msg.retryPrompt"
+                :disabled="isGenerating || !modelReady"
+                @click="retryPrompt(msg.retryPrompt)"
+              >もういちど</button>
+            </div>
+          </template>
+          <template x-if="msg.role !== 'error'">
+            <div>
+              <div class="message-label" x-text="msg.role === 'user' ? 'あなた' : 'AI'"></div>
+              <div class="message-bubble">
+                <template x-if="msg.isTyping">
+                  <div class="typing-indicator"><span></span><span></span><span></span></div>
+                </template>
+                <template x-if="!msg.isTyping">
+                  <span x-text="msg.text"></span>
+                </template>
+              </div>
+              <button
+                class="code-run-chip"
+                x-show="msg.codeBlock && !isGenerating"
+                @click="openCodePreview(msg.codeBlock)"
+              >&#x25B6; もういちど うごかす</button>
+            </div>
+          </template>
         </div>
       </template>
     </main>
@@ -94,6 +111,6 @@
       <button type="submit" class="send-button" :disabled="isGenerating || !modelReady || !inputText.trim()">おくる</button>
     </form>
   </div>
-  <script src="app.js?v=20260421c"></script>
+  <script src="app.js?v=20260422b"></script>
 </body>
 </html>

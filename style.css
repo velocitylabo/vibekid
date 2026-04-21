@@ -431,11 +431,41 @@ html, body {
   border: 1px solid var(--border);
 }
 
-.message.error .message-bubble {
-  background: #ffebee;
-  color: #c62828;
-  border: 1px solid #ffcdd2;
+.error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 28px;
+  background: var(--ai-bubble);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  border-bottom-left-radius: 4px;
 }
+
+.error-emoji {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.error-retry {
+  background: linear-gradient(135deg, #4CAF50, #66BB6A);
+  color: #fff;
+  border: none;
+  padding: 8px 22px;
+  border-radius: 18px;
+  font-size: 0.95rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.error-retry:hover:not(:disabled) {
+  background: linear-gradient(135deg, #43A047, #4CAF50);
+  transform: scale(1.04);
+}
+
+.error-retry:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .typing-indicator { display: inline-flex; gap: 4px; padding: 4px 0; }
 .typing-indicator span {
