@@ -18,16 +18,24 @@ const MODEL_FILE = "gemma-4-E2B-it-web.task";
   } catch (_) {}
 })();
 
+// 失敗モードを reason で分類し、init 側で user-visible メッセージに分岐する
 async function checkWebGPU() {
-  if (!navigator.gpu) throw new Error("WebGPU 非対応ブラウザ");
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) throw new Error("GPU adapter 取得失敗");
+  if (!navigator.gpu) return { ok: false, reason: "webgpu-unavailable" };
+  let adapter;
+  try {
+    adapter = await navigator.gpu.requestAdapter();
+  } catch (e) {
+    return { ok: false, reason: "adapter-error", error: e };
+  }
+  if (!adapter) return { ok: false, reason: "adapter-unavailable" };
   const info = {
     maxBufferGB: (adapter.limits.maxBufferSize / 1e9).toFixed(2),
     f16: adapter.features.has("shader-f16"),
   };
   console.log("[vibeApp] WebGPU", info);
-  return info;
+  if (Number(info.maxBufferGB) < 1.5) return { ok: false, reason: "low-buffer", info };
+  if (!info.f16) return { ok: false, reason: "no-shader-f16", info };
+  return { ok: true, info };
 }
 
 async function loadModelWithCache(url, fileName, onProgress) {
@@ -113,9 +121,17 @@ document.addEventListener("alpine:init", () => {
 
       try {
         const gpu = await checkWebGPU();
-        if (Number(gpu.maxBufferGB) < 1.5) {
-          this.statusText = "GPU メモリがたりないよ（Chrome 起動フラグを確認してね）";
+        if (!gpu.ok) {
+          const reasonMsg = {
+            "webgpu-unavailable": "このブラウザは あたらしい AI に たいおうしてないみたい... さいしんの Chrome で ひらいてね",
+            "adapter-error": "GPU の じゅんびで エラーが でたよ",
+            "adapter-unavailable": "GPU が みつからなかったよ",
+            "low-buffer": "GPU メモリが たりないよ（Chrome フラグ --enable-unsafe-webgpu を ゆうこうにしてね）",
+            "no-shader-f16": "この かんきょうでは うごかないみたい（Windows の Chrome を おすすめするよ）",
+          }[gpu.reason] || "GPU の じゅんびに しっぱいしたよ";
+          this.statusText = reasonMsg;
           this.statusType = "error";
+          console.warn("[vibeApp] WebGPU check failed:", gpu);
           return;
         }
 
@@ -131,26 +147,46 @@ document.addEventListener("alpine:init", () => {
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
         );
 
-        const t0 = performance.now();
-        const { stream, hit } = await loadModelWithCache(MODEL_URL, MODEL_FILE, ({ phase, bytes, total }) => {
-          if (total) {
-            this.loadPct = Math.round((bytes / total) * 100);
-            this.statusText = hit
-              ? "おぼえてた！ よみこんでるよ..."
-              : "のうみそを ダウンロードちゅう... " + this.loadPct + "%";
-          }
-        });
-
-        this.statusText = "のうみそを くみたてちゅう...";
-        this.statusType = "downloading";
-
-        this.llm = await LlmInference.createFromOptions(fileset, {
-          baseOptions: { modelAssetBuffer: stream.getReader() },
+        const llmOptions = {
           maxTokens: 2048,
           topK: 40,
           temperature: 0.7,
           randomSeed: 42,
-        });
+        };
+
+        const t0 = performance.now();
+
+        // primary は OPFS + modelAssetBuffer、失敗時は modelAssetPath に fallback
+        let hit = false;
+        try {
+          const result = await loadModelWithCache(MODEL_URL, MODEL_FILE, ({ phase, bytes, total }) => {
+            if (total) {
+              this.loadPct = Math.round((bytes / total) * 100);
+              this.statusText = hit
+                ? "おぼえてた！ よみこんでるよ..."
+                : "のうみそを ダウンロードちゅう... " + this.loadPct + "%";
+            }
+          });
+          hit = result.hit;
+
+          this.statusText = "のうみそを くみたてちゅう...";
+          this.statusType = "downloading";
+
+          this.llm = await LlmInference.createFromOptions(fileset, {
+            ...llmOptions,
+            baseOptions: { modelAssetBuffer: result.stream.getReader() },
+          });
+        } catch (bufferErr) {
+          console.warn("[vibeApp] OPFS/modelAssetBuffer 経路 fallback:", bufferErr);
+          this.statusText = "べつのほうほうで よみこみちゅう...";
+          this.statusType = "downloading";
+          this.loadPct = 0;
+
+          this.llm = await LlmInference.createFromOptions(fileset, {
+            ...llmOptions,
+            baseOptions: { modelAssetPath: MODEL_URL },
+          });
+        }
 
         const sec = ((performance.now() - t0) / 1000).toFixed(1);
         console.log("[vibeApp] LlmInference ready", { hit, sec });
