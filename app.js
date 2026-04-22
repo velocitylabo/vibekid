@@ -111,6 +111,7 @@ document.addEventListener("alpine:init", () => {
     _recognition: null,
     _voiceNoticeTimer: null,
     _voiceStartText: "",
+    _p5ScriptTag: null,
 
     hints: [
       "ねこがぴょんぴょんはねるやつ",
@@ -128,6 +129,9 @@ document.addEventListener("alpine:init", () => {
       try {
         this.darkMode = localStorage.getItem(this.DARK_KEY) === "1";
       } catch (e) {}
+
+      // p5.js を iframe に inline 展開できるよう先に取得（CDN 断でもプレビュー/validator を機能させる）
+      this._p5ScriptTag = await this._buildP5ScriptTag();
 
       try {
         const gpu = await checkWebGPU();
@@ -483,6 +487,22 @@ function draw() {
       return null;
     },
 
+    async _buildP5ScriptTag() {
+      const cdnTag = `<script src="${this.P5_CDN}"><\/script>`;
+      try {
+        const res = await fetch("./vendor/p5.min.js", { cache: "force-cache" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const src = await res.text();
+        // 将来 p5 に </script> 断片が混入しても HTML parser に閉じられないよう防御
+        const safe = src.replace(/<\/script/gi, "<\\/script");
+        console.log("[vibeApp] p5.js inline loaded", { bytes: src.length });
+        return `<script>${safe}<\/script>`;
+      } catch (e) {
+        console.warn("[vibeApp] p5.js inline load failed, fallback to CDN", e);
+        return cdnTag;
+      }
+    },
+
     wrapP5(code, tok) {
       // p5.js CDN をロードする iframe 用 HTML を組み立てる
       // canvas を iframe viewport に収める: flex center + max 100% で縦横比を保ったまま縮小
@@ -499,7 +519,7 @@ function draw() {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
 <script>${preHarness}<\/script>
-<script src="${this.P5_CDN}"><\/script>
+${this._p5ScriptTag}
 <style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
 </head><body><script>
 ${code}
@@ -589,7 +609,7 @@ ${code}
 
     // hidden sandboxed iframe で実行して、エラーなしに canvas + setup + draw が揃えば OK
     // error listener は user script より前に置いて同期エラーも拾う。
-    // timeout は p5 CDN フェッチ + 実行時間を考慮して 5s（validation 専用 iframe は毎回 CDN fetch）
+    // timeout は p5 初期化 + 実行時間を考慮して 5s（inline 経路は fetch ゼロ、CDN fallback 時のみ fetch 時間が乗る）
     _validateCode(code) {
       return new Promise((resolve) => {
         const tok = "v" + this._nextId++;
@@ -612,7 +632,7 @@ ${code}
         const srcdoc = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <script>${preHarness}<\/script>
-<script src="${this.P5_CDN}"><\/script>
+${this._p5ScriptTag}
 </head><body><script>${code}<\/script><script>${postHarness}<\/script></body></html>`;
         const iframe = document.createElement("iframe");
         iframe.setAttribute("sandbox", "allow-scripts");
