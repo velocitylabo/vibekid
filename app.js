@@ -100,9 +100,17 @@ document.addEventListener("alpine:init", () => {
     loadPct: 0,
     previewCode: "",
     darkMode: false,
+    voiceSupported: false,
+    voiceReady: false,
+    voiceInstalling: false,
+    isRecording: false,
+    voiceNotice: null,
     _nextId: 1,
     _heartbeatState: null,
     _lastUserText: "",
+    _recognition: null,
+    _voiceNoticeTimer: null,
+    _voiceStartText: "",
 
     hints: [
       "ねこがぴょんぴょんはねるやつ",
@@ -199,6 +207,7 @@ document.addEventListener("alpine:init", () => {
         this.modelReady = true;
         this.statusText = "じゅんびOK！";
         this.statusType = "ready";
+        this._detectVoiceSupport();
         this.$nextTick(() => this.$refs.messageInput?.focus());
       } catch (err) {
         console.error("[vibeApp] init 失敗:", err);
@@ -264,9 +273,174 @@ function draw() {
     },
 
     resetChat() {
+      this.stopVoiceInput();
       this.history = [];
       this.messages = [];
       this.previewCode = "";
+    },
+
+    async _detectVoiceSupport() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR || typeof SR.available !== "function" || typeof SR.install !== "function") {
+        this.voiceSupported = false;
+        return;
+      }
+      try {
+        const state = await SR.available({ langs: ["ja-JP"], processLocally: true });
+        console.log("[vibeApp] voice availability:", state);
+        if (state === "unavailable") {
+          this.voiceSupported = false;
+          return;
+        }
+        this.voiceSupported = true;
+        this.voiceReady = state === "available";
+      } catch (e) {
+        console.warn("[vibeApp] voice availability check failed", e);
+        this.voiceSupported = false;
+      }
+    },
+
+    async _ensureVoiceInstalled() {
+      if (this.voiceReady) return true;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR?.install) return false;
+      this.voiceInstalling = true;
+      const t0 = performance.now();
+      try {
+        const ok = await SR.install({ langs: ["ja-JP"], processLocally: true });
+        const sec = ((performance.now() - t0) / 1000).toFixed(1);
+        console.log("[vibeApp] voice install", { ok, sec });
+        if (!ok) {
+          this._showVoiceNotice("⚠️", "こえの じゅんびに しっぱい");
+          return false;
+        }
+        const state = await SR.available({ langs: ["ja-JP"], processLocally: true });
+        this.voiceReady = state === "available";
+        if (!this.voiceReady) {
+          this._showVoiceNotice("⚠️", "こえの じゅんびに しっぱい");
+        }
+        return this.voiceReady;
+      } catch (e) {
+        console.error("[vibeApp] voice install failed", e);
+        this._showVoiceNotice("⚠️", "こえの じゅんびに しっぱい");
+        return false;
+      } finally {
+        this.voiceInstalling = false;
+      }
+    },
+
+    async toggleVoiceInput() {
+      if (this.voiceInstalling) return;
+      if (this.isRecording) {
+        this.stopVoiceInput();
+        return;
+      }
+      if (this.isGenerating || !this.voiceSupported || !this.modelReady) return;
+      if (!this.voiceReady) {
+        const ok = await this._ensureVoiceInstalled();
+        if (!ok) return;
+      }
+      this._startVoiceInput();
+    },
+
+    _startVoiceInput() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return;
+      let rec;
+      try {
+        rec = new SR();
+      } catch (e) {
+        console.error("[vibeApp] SpeechRecognition 生成失敗", e);
+        this._handleSpeechError("start-failed");
+        return;
+      }
+      rec.lang = "ja-JP";
+      rec.continuous = false;
+      rec.interimResults = true;
+      try { rec.processLocally = true; } catch (_) {}
+
+      this._voiceStartText = this.inputText;
+      this.inputText = "";
+      let finalText = "";
+
+      rec.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) finalText += t;
+          else interim += t;
+        }
+        this.inputText = (finalText + interim).trim();
+        this.$nextTick(() => this.resizeTextarea());
+      };
+
+      rec.onerror = (e) => {
+        console.warn("[vibeApp] speech error:", e.error);
+        this._handleSpeechError(e.error || "unknown");
+      };
+
+      rec.onend = () => {
+        const wasRecording = this.isRecording;
+        this.isRecording = false;
+        this._recognition = null;
+        if (!this.inputText.trim()) {
+          if (this._voiceStartText) this.inputText = this._voiceStartText;
+          if (wasRecording) this._showVoiceNotice("🤔", "きこえなかったよ");
+        }
+        this._voiceStartText = "";
+        this.$nextTick(() => {
+          this.resizeTextarea();
+          this.$refs.messageInput?.focus();
+        });
+      };
+
+      this._recognition = rec;
+      this.isRecording = true;
+      try {
+        rec.start();
+        console.log("[vibeApp] speech recognition started (ja-JP, on-device)");
+      } catch (e) {
+        console.error("[vibeApp] rec.start() failed", e);
+        this.isRecording = false;
+        this._recognition = null;
+        this.inputText = this._voiceStartText;
+        this._voiceStartText = "";
+        this._handleSpeechError("start-failed");
+      }
+    },
+
+    stopVoiceInput() {
+      if (!this._recognition) return;
+      try { this._recognition.stop(); } catch (_) {}
+    },
+
+    _handleSpeechError(code) {
+      this.isRecording = false;
+      this._recognition = null;
+      if (this._voiceStartText) {
+        if (!this.inputText.trim()) this.inputText = this._voiceStartText;
+        this._voiceStartText = "";
+      }
+      if (code === "aborted") return;
+      const map = {
+        "not-allowed": ["🎤", "マイクをつかわせてね"],
+        "service-not-allowed": ["🎤", "マイクをつかわせてね"],
+        "no-speech": ["🤔", "きこえなかったよ"],
+        "audio-capture": ["🎤", "マイクがみつからないよ"],
+        "network": ["🌐", "インターネットがいるみたい"],
+        "language-not-supported": ["😢", "にほんごは むり みたい"],
+      };
+      const [emoji, text] = map[code] || ["😢", "もういちど おしえて"];
+      this._showVoiceNotice(emoji, text);
+    },
+
+    _showVoiceNotice(emoji, text) {
+      if (this._voiceNoticeTimer) clearTimeout(this._voiceNoticeTimer);
+      this.voiceNotice = { emoji, text };
+      this._voiceNoticeTimer = setTimeout(() => {
+        this.voiceNotice = null;
+        this._voiceNoticeTimer = null;
+      }, 2500);
     },
 
     toggleDarkMode() {

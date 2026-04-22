@@ -99,18 +99,45 @@
     </main>
 
     <form class="chat-input" @submit.prevent="sendMessage()">
-      <textarea
-        x-ref="messageInput"
-        x-model="inputText"
-        @input="resizeTextarea()"
-        @keydown="handleKeydown($event)"
-        placeholder="ここに かいてね..."
-        :disabled="isGenerating || !modelReady"
-        rows="1"
-      ></textarea>
-      <button type="submit" class="send-button" :disabled="isGenerating || !modelReady || !inputText.trim()">おくる</button>
+      <div class="voice-notice" x-show="isRecording || voiceInstalling || voiceNotice" x-transition.opacity>
+        <template x-if="isRecording">
+          <span><span class="voice-notice-dot"></span>きいてるよ...</span>
+        </template>
+        <template x-if="!isRecording && voiceInstalling">
+          <span>⏳ こえの じゅんびちゅう...</span>
+        </template>
+        <template x-if="!isRecording && !voiceInstalling && voiceNotice">
+          <span x-text="voiceNotice.emoji + ' ' + voiceNotice.text"></span>
+        </template>
+      </div>
+      <div class="chat-input-wrap">
+        <textarea
+          x-ref="messageInput"
+          x-model="inputText"
+          @input="resizeTextarea()"
+          @keydown="handleKeydown($event)"
+          placeholder="ここに かいてね..."
+          :disabled="isGenerating || !modelReady"
+          rows="1"
+        ></textarea>
+        <button
+          type="button"
+          class="voice-button"
+          x-show="voiceSupported"
+          :class="{ recording: isRecording, installing: voiceInstalling }"
+          :disabled="isGenerating || !modelReady || voiceInstalling"
+          @click="toggleVoiceInput()"
+          :title="isRecording ? 'とめる' : (voiceInstalling ? 'じゅんびちゅう' : 'こえでいれる')"
+          :aria-label="isRecording ? 'ろくおんをとめる' : 'こえでいれる'"
+        >
+          <span x-show="!isRecording && !voiceInstalling" aria-hidden="true">🎤</span>
+          <span x-show="voiceInstalling" aria-hidden="true">⏳</span>
+          <span x-show="isRecording" class="voice-recording-dot" aria-hidden="true"></span>
+        </button>
+      </div>
+      <button type="submit" class="send-button" :disabled="isGenerating || !modelReady || !inputText.trim() || isRecording">おくる</button>
     </form>
   </div>
-  <script src="app.js?v=20260422b"></script>
+  <script src="app.js?v=20260422c"></script>
 </body>
 </html>
