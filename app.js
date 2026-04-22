@@ -517,7 +517,6 @@ function draw() {
       return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
-<meta http-equiv="Permissions-Policy" content="accelerometer=(), gyroscope=(), magnetometer=()">
 <script>${preHarness}<\/script>
 ${this._p5ScriptTag}
 <style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
@@ -636,6 +635,7 @@ ${this._p5ScriptTag}
 </head><body><script>${code}<\/script><script>${postHarness}<\/script></body></html>`;
         const iframe = document.createElement("iframe");
         iframe.setAttribute("sandbox", "allow-scripts");
+        iframe.setAttribute("allow", "accelerometer; gyroscope; magnetometer");
         iframe.style.cssText = "position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none";
         let settled = false;
         const cleanup = () => { if (settled) return; settled = true; try { iframe.remove(); } catch (_) {} window.removeEventListener("message", handler); };
