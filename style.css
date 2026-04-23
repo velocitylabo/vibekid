@@ -373,14 +373,14 @@ html, body {
   white-space: pre-line;
 }
 
-.welcome-hints {
+.welcome-presets {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
 }
 
-.hint-chip {
+.preset-chip {
   background: var(--chip-bg);
   color: var(--text);
   border: 1px solid var(--chip-border);
@@ -389,10 +389,24 @@ html, body {
   font-size: 0.9rem;
   cursor: pointer;
   transition: transform 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
 }
 
-.hint-chip:hover:not(:disabled) { transform: scale(1.04); }
-.hint-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.preset-chip-emoji {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.preset-chip-text {
+  line-height: 1;
+}
+
+.preset-chip:hover:not(:disabled) { transform: scale(1.04); }
+.preset-chip:active:not(:disabled) { transform: scale(0.98); }
+.preset-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .message {
   display: flex;

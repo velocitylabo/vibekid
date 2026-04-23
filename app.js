@@ -120,12 +120,12 @@ document.addEventListener("alpine:init", () => {
     _diagEntries: [],
     _diagCurrent: null,
 
-    hints: [
-      "ねこがぴょんぴょんはねるやつ",
-      "ボタンおすといろがかわるやつ",
-      "にじいろのボールがとぶやつ",
-      "おえかきできるやつ",
-      "ほしがキラキラひかるやつ",
+    presets: [
+      { text: "ねこがはしる", emoji: "🐱", category: "action" },
+      { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
+      { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
+      { text: "ほしがきらきらひかる", emoji: "⭐", category: "visual" },
+      { text: "あめがふる", emoji: "☔", category: "visual" },
     ],
 
     P5_CDN: "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js",
@@ -474,6 +474,12 @@ function draw() {
         e.preventDefault();
         this.sendMessage();
       }
+    },
+
+    selectPreset(preset) {
+      if (this.isGenerating || !this.modelReady) return;
+      this.inputText = preset.text;
+      this.sendMessage();
     },
 
     resizeTextarea() {

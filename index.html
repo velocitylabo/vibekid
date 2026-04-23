@@ -57,9 +57,17 @@
     <main class="chat-messages" x-ref="chatMessages">
       <div class="welcome-message" x-show="messages.length === 0">
         <p class="welcome-text">なにを つくる？<br />「〜を つくって」って かいてみてね！</p>
-        <div class="welcome-hints">
-          <template x-for="hint in hints" :key="hint">
-            <button class="hint-chip" :disabled="isGenerating || !modelReady" @click="inputText = hint; sendMessage()" x-text="hint"></button>
+        <div class="welcome-presets">
+          <template x-for="preset in presets" :key="preset.text">
+            <button
+              class="preset-chip"
+              :disabled="isGenerating || !modelReady"
+              @click="selectPreset(preset)"
+              :aria-label="preset.text"
+            >
+              <span class="preset-chip-emoji" aria-hidden="true" x-text="preset.emoji"></span>
+              <span class="preset-chip-text" x-text="preset.text"></span>
+            </button>
           </template>
         </div>
       </div>
@@ -139,6 +147,6 @@
       <button type="submit" class="send-button" :disabled="isGenerating || !modelReady || !inputText.trim() || isRecording">おくる</button>
     </form>
   </div>
-  <script src="app.js?v=20260423a"></script>
+  <script src="app.js?v=20260423b"></script>
 </body>
 </html>
