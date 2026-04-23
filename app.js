@@ -614,8 +614,10 @@ ${code}
     _startHeartbeatWatch(tok) {
       // 初回 heartbeat まで 3s の grace（CDN fetch + 初期化を許容）
       // 初回受信後は 2s 無音で frozen 判定 → iframe をリセットしてエラー UI へ
+      // 2.5s heartbeat 継続で preview 成功とみなし diag annotate（以降 error/frozen が
+      // 発生した場合はそちらで上書きされる）
       const startTime = Date.now();
-      const state = { gotFirst: false, lastBeat: 0, frozen: false };
+      const state = { gotFirst: false, lastBeat: 0, frozen: false, annotatedOk: false };
       const handler = (e) => {
         const d = e.data;
         if (!d || d.tok !== tok || state.frozen) return;
@@ -636,18 +638,31 @@ ${code}
             state.frozen = true;
             this._onPreviewFrozen();
           }
-        } else if (now - state.lastBeat > 2000) {
+          return;
+        }
+        if (now - state.lastBeat > 2000) {
           state.frozen = true;
           this._onPreviewFrozen();
+          return;
+        }
+        if (!state.annotatedOk && now - startTime > 2500) {
+          state.annotatedOk = true;
+          this._diagAnnotateLast({ preview: { status: "ok" } });
         }
       }, 500);
-      this._heartbeatState = { tok, handler, timerId };
+      this._heartbeatState = { tok, handler, timerId, state };
     },
 
     _teardownHeartbeat() {
       if (!this._heartbeatState) return;
-      window.removeEventListener("message", this._heartbeatState.handler);
-      clearInterval(this._heartbeatState.timerId);
+      const { handler, timerId, state } = this._heartbeatState;
+      window.removeEventListener("message", handler);
+      clearInterval(timerId);
+      // 成功 annotate も失敗検知もないまま破棄される場合は torn_down として記録
+      // （次ターンが被さって前 preview の実行結果が観測できないケースを可視化）
+      if (state && !state.frozen && !state.annotatedOk) {
+        this._diagAnnotateLast({ preview: { status: "torn_down" } });
+      }
       this._heartbeatState = null;
     },
 
@@ -864,13 +879,19 @@ ${this._p5ScriptTag}
             this.openCodePreview(code);
           } else {
             console.warn("[vibeApp] コード検証失敗:", valid.msg);
+            if (this._diagCurrent) this._diagCurrent.preview = { status: "skipped", reason: "validator_failed" };
             if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
             this._pushErrorMessage("🔧", text);
           }
+        } else if (!code) {
+          if (this._diagCurrent) this._diagCurrent.preview = { status: "skipped", reason: "no_code_block" };
         }
       } catch (err) {
         console.error("[vibeApp] generateResponse 失敗:", err);
-        if (this._diagCurrent) this._diagCurrent.generateError = String(err && err.message || err);
+        if (this._diagCurrent) {
+          this._diagCurrent.generateError = String(err && err.message || err);
+          this._diagCurrent.preview = { status: "skipped", reason: "generate_error" };
+        }
         if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
         this._pushErrorMessage("😢", text);
       } finally {
