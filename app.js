@@ -1,6 +1,11 @@
 const MODEL_URL = "./models/gemma-4-E2B-it-web.task";
 const MODEL_FILE = "gemma-4-E2B-it-web.task";
 
+// 生成ごとの prompt / raw response / validator / preview 結果を蓄積する ring buffer
+// (#137) 失敗率計測と fail mode 分類用。window.__vibeDiag.{list,dump,clear} で操作する
+const DIAG_KEY = "vibe_diag_entries";
+const DIAG_MAX = 50;
+
 // 旧版「AI おしゃべりひろば」時代の Service Worker / Cache Storage を一掃する。
 // 以前アクセス済みのブラウザだけが対象。新規ユーザーには影響しない。
 (async () => {
@@ -112,6 +117,8 @@ document.addEventListener("alpine:init", () => {
     _voiceNoticeTimer: null,
     _voiceStartText: "",
     _p5ScriptTag: null,
+    _diagEntries: [],
+    _diagCurrent: null,
 
     hints: [
       "ねこがぴょんぴょんはねるやつ",
@@ -129,6 +136,14 @@ document.addEventListener("alpine:init", () => {
       try {
         this.darkMode = localStorage.getItem(this.DARK_KEY) === "1";
       } catch (e) {}
+
+      this._diagLoad();
+      window.__vibeDiag = {
+        list: () => this._diagEntries.slice(),
+        dump: () => this._diagDump(),
+        clear: () => this._diagClear(),
+        size: () => this._diagEntries.length,
+      };
 
       // p5.js を iframe に inline 展開できるよう先に取得（CDN 断でもプレビュー/validator を機能させる）
       this._p5ScriptTag = await this._buildP5ScriptTag();
@@ -473,6 +488,66 @@ function draw() {
       if (el) el.scrollTop = el.scrollHeight;
     },
 
+    _diagLoad() {
+      try {
+        const raw = localStorage.getItem(DIAG_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) this._diagEntries = parsed.slice(-DIAG_MAX);
+      } catch (e) {
+        console.warn("[vibeApp] diag load 失敗", e);
+      }
+    },
+
+    _diagPersist() {
+      try {
+        localStorage.setItem(DIAG_KEY, JSON.stringify(this._diagEntries));
+      } catch (e) {
+        console.warn("[vibeApp] diag persist 失敗（quota？）", e);
+      }
+    },
+
+    _diagPush(entry) {
+      this._diagEntries.push(entry);
+      if (this._diagEntries.length > DIAG_MAX) {
+        this._diagEntries.splice(0, this._diagEntries.length - DIAG_MAX);
+      }
+      this._diagPersist();
+    },
+
+    _diagAnnotateLast(patch) {
+      if (this._diagEntries.length === 0) return;
+      const last = this._diagEntries[this._diagEntries.length - 1];
+      Object.assign(last, patch);
+      this._diagPersist();
+    },
+
+    _diagDump() {
+      const payload = {
+        dumpedAt: new Date().toISOString(),
+        version: "vibe-diag-1",
+        entries: this._diagEntries,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+      a.href = url;
+      a.download = `vibe-diag-${ts}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return payload.entries.length;
+    },
+
+    _diagClear() {
+      this._diagEntries = [];
+      this._diagCurrent = null;
+      try { localStorage.removeItem(DIAG_KEY); } catch (_) {}
+    },
+
     extractCodeBlock(text) {
       // p5.js モード: ```js または ```javascript ブロックを抽出
       const fenced = text.match(/```(?:js|javascript)\s*([\s\S]*?)```/);
@@ -578,6 +653,7 @@ ${code}
 
     _onPreviewFrozen() {
       console.warn("[vibeApp] preview frozen (heartbeat timeout)");
+      this._diagAnnotateLast({ preview: { status: "frozen" } });
       this.previewCode = "";
       this._teardownHeartbeat();
       if (this._lastUserText) this._pushErrorMessage("😵", this._lastUserText);
@@ -585,6 +661,7 @@ ${code}
 
     _onPreviewError(msg) {
       console.warn("[vibeApp] preview runtime error:", msg);
+      this._diagAnnotateLast({ preview: { status: "error", msg: msg || null } });
       this.previewCode = "";
       this._teardownHeartbeat();
       if (this._lastUserText) this._pushErrorMessage("🔧", this._lastUserText);
@@ -694,6 +771,21 @@ ${this._p5ScriptTag}
         const prompt = this._buildPrompt(text);
         console.log("[vibeApp] prompt length:", prompt.length);
 
+        this._diagCurrent = {
+          ts: new Date().toISOString(),
+          userText: text,
+          promptChars: prompt.length,
+          rawResponse: "",
+          ttftMs: null,
+          decodeMs: null,
+          totalMs: null,
+          outputChars: null,
+          extractedCode: null,
+          validator: null,
+          preview: null,
+          generateError: null,
+        };
+
         let fullText = "";
         let streamerFires = 0;
         let tFirstToken = 0;
@@ -720,6 +812,7 @@ ${this._p5ScriptTag}
             if (typingIdx !== -1) this.messages[typingIdx].isTyping = false;
           }
           fullText += partial;
+          if (this._diagCurrent) this._diagCurrent.rawResponse = fullText;
           const cleaned = fullText.replace(/^>+\s*/, "");
           if (typingIdx !== -1) {
             this.messages[typingIdx].text = cleaned;
@@ -741,6 +834,13 @@ ${this._p5ScriptTag}
           decodeTokS: decodeMs > 0 ? (approxTokens / (decodeMs / 1000)).toFixed(1) : "n/a",
         });
 
+        if (this._diagCurrent) {
+          this._diagCurrent.ttftMs = tFirstToken > 0 ? Math.round(tFirstToken - tGenStart) : null;
+          this._diagCurrent.decodeMs = Math.round(decodeMs);
+          this._diagCurrent.totalMs = Math.round(tGenEnd - tGenStart);
+          this._diagCurrent.outputChars = fullText.length;
+        }
+
         if (heartbeatId) { clearInterval(heartbeatId); heartbeatId = null; }
         // streamer が一度も発火しない異常ケースでも typing indicator を外す
         if (typingIdx !== -1 && this.messages[typingIdx].isTyping) {
@@ -753,8 +853,11 @@ ${this._p5ScriptTag}
         const code = this.extractCodeBlock(cleanedFull);
         const explanation = cleanedFull.replace(/```[\s\S]*?```/g, "").trim() || "できたよ！";
 
+        if (this._diagCurrent) this._diagCurrent.extractedCode = code;
+
         if (code && typingIdx !== -1) {
           const valid = await this._validateCode(code);
+          if (this._diagCurrent) this._diagCurrent.validator = { ok: !!valid.ok, msg: valid.msg || null };
           if (valid.ok) {
             this.messages[typingIdx].codeBlock = code;
             this.messages[typingIdx].text = explanation;
@@ -767,9 +870,14 @@ ${this._p5ScriptTag}
         }
       } catch (err) {
         console.error("[vibeApp] generateResponse 失敗:", err);
+        if (this._diagCurrent) this._diagCurrent.generateError = String(err && err.message || err);
         if (typingIdx !== -1) this.messages.splice(typingIdx, 1);
         this._pushErrorMessage("😢", text);
       } finally {
+        if (this._diagCurrent) {
+          this._diagPush(this._diagCurrent);
+          this._diagCurrent = null;
+        }
         if (heartbeatId) clearInterval(heartbeatId);
         this.isGenerating = false;
         this.$nextTick(() => {
