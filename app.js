@@ -556,7 +556,10 @@ function draw() {
 
     extractCodeBlock(text) {
       // p5.js モード: ```js または ```javascript ブロックを抽出
-      const fenced = text.match(/```(?:js|javascript)\s*([\s\S]*?)```/);
+      // Gemma 4 E2B が稀に冒頭で ```js\n```js\n... と二重 fence を出力するため、
+      // 連続する開き fence を 1 つに畳んでから抽出する（#127 / #140 / あめがふる 6/6 再現）
+      const normalized = text.replace(/```(?:js|javascript)\s*(?=```(?:js|javascript)\s*)/g, "");
+      const fenced = normalized.match(/```(?:js|javascript)\s*([\s\S]*?)```/);
       if (fenced) return fenced[1].trim();
       // fallback: マーカーなしで function setup() / draw() を含む素の JS
       const raw = text.match(/(function\s+setup\s*\(\)[\s\S]*?function\s+draw\s*\(\)[\s\S]*?)(?:\n\s*(?:```|$))/);
