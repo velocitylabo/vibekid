@@ -180,7 +180,13 @@ print(tokenizer.decode(out[0], skip_special_tokens=True))
 
 ## License
 
-[Gemma Terms of Use](https://ai.google.dev/gemma/terms) 準拠。本 LoRA adapter も同一ライセンスで配布。
+本 repository は **複数 license の派生物** で構成される:
+
+- **Adapter weights** (`adapter_model.safetensors`、`adapter_config.json`): base model `google/gemma-4-E2B-it` の派生物として [Gemma Terms of Use](https://ai.google.dev/gemma/terms) を継承
+- **Tokenizer / chat_template** (`tokenizer.json`、`tokenizer_config.json`、`chat_template.jinja`、`processor_config.json`): Gemma upstream のものを再配布、同様に Gemma Terms 準拠
+- **Model card 本文 (`README.md`) / configs of our authorship**: [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) で配布
+
+この dual-license は Kaggle Gemma 4 Hackathon の submission license 要件 (CC-BY 4.0) と pretrained model exception の両立を意図している。
 
 ## Repo links
 
