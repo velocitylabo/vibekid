@@ -174,9 +174,34 @@ print(tokenizer.decode(out[0], skip_special_tokens=True))
 
 ## Citation / Acknowledgements
 
-- Base: Google DeepMind. Gemma 4 (`google/gemma-4-E2B-it`).
-- Tooling: [Unsloth AI](https://github.com/unslothai/unsloth)、[transformers](https://github.com/huggingface/transformers)、[peft](https://github.com/huggingface/peft)
-- Kaggle Gemma 4 Hackathon（締切 2026-05-18）
+### Base model
+
+Google DeepMind. Gemma 4 (`google/gemma-4-E2B-it`).
+
+### Hackathon
+
+```bibtex
+@misc{gemma4hackathon2026,
+  author = {Ballantyne, Ian and Cameron, Glenn and Cruz, Mar{\'i}a and Lacombe, Olivier and Quan, Kristen and Sanseviero, Omar},
+  title = {The Gemma 4 Good Hackathon},
+  year = {2026},
+  publisher = {Kaggle},
+  url = {https://kaggle.com/competitions/gemma-4-good-hackathon}
+}
+```
+
+### Tooling
+
+- [Unsloth AI](https://github.com/unslothai/unsloth) — Gemma 4 SFT 高速化、`FastModel` / `train_on_responses_only`
+- [transformers](https://github.com/huggingface/transformers) (5.5.0 系) — model loading、SFTTrainer
+- [peft](https://github.com/huggingface/peft) — LoRA adapter 構造
+- [trl](https://github.com/huggingface/trl) — `SFTTrainer` / `SFTConfig`
+- [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) — 4bit quantization
+
+### Synthesis pipeline
+
+- [OpenRouter](https://openrouter.ai/) → `gemini-2.5-flash` で訓練データ合成 (757 件、4/17-18 確定)
+- 合成 meta-prompt: `sft/meta-prompt.template.md` (talk-sample dev repo 内、本 release には未同梱)
 
 ## License
 
