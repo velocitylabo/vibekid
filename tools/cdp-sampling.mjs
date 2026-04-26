@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 5 presets × N runs サンプリング runner via CDP
+// 4 presets × N runs サンプリング runner via CDP
 // memory feedback_sampling_protocol.md 準拠: 各 run hard reload + 単発 click
 //
 // 実行例:
@@ -18,7 +18,6 @@ const PRESETS = [
   { text: "ねこがはしる", emoji: "🐱", category: "action" },
   { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
   { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
-  { text: "ほしがきらきらひかる", emoji: "⭐", category: "visual" },
   { text: "あめがふる", emoji: "☔", category: "visual" },
 ];
 
