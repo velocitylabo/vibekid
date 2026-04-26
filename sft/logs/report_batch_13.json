@@ -1,0 +1,10 @@
+{
+  "total": 50,
+  "passed": 50,
+  "failed": 0,
+  "dedupSkipped": 1,
+  "appended": 49,
+  "yieldRate": "100.0%",
+  "appendRate": "98.0%",
+  "failReasons": {}
+}
