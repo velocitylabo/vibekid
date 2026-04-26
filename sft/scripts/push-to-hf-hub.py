@@ -126,7 +126,21 @@ def push(
         commit_message=commit_message,
         token=token,
         repo_type="model",
-        ignore_patterns=["*.bak", "__pycache__/*", ".DS_Store"],
+        # training artifacts (optimizer/scheduler/rng/trainer_state) は inference 用途に不要、
+        # HF Hub repo を clean に保つため除外。training_args.bin (pickled) も除外し、
+        # 必要なら --training-args 引数で training_args.json を model card 内に展開。
+        # README.md は --model-card で別途 upload するためここで上書き対象外にする。
+        ignore_patterns=[
+            "*.bak",
+            "__pycache__/*",
+            ".DS_Store",
+            "optimizer.pt",
+            "scheduler.pt",
+            "rng_state.pth",
+            "trainer_state.json",
+            "training_args.bin",
+            "README.md",
+        ],
     )
 
     if model_card_text is not None:
