@@ -523,6 +523,17 @@ function draw() {
     _diagAnnotateLast(patch) {
       if (this._diagEntries.length === 0) return;
       const last = this._diagEntries[this._diagEntries.length - 1];
+      // preview.status が "ok" 確定後の他遷移上書きを禁止する (#144 連続クリック対策、
+      // issue 本文 (c) 案)。前 watcher の timer 残骸が new entry の preview に
+      // "frozen"/"torn_down"/"error" を書き込む経路は tok mismatch guard で塞ぐが、
+      // entry 単位の二重保険として上書きを抑止する
+      if (
+        patch.preview?.status &&
+        patch.preview.status !== "ok" &&
+        last.preview?.status === "ok"
+      ) {
+        return;
+      }
       Object.assign(last, patch);
       this._diagPersist();
     },
@@ -630,9 +641,14 @@ ${code}
       // 発生した場合はそちらで上書きされる）
       const startTime = Date.now();
       const state = { gotFirst: false, lastBeat: 0, frozen: false, annotatedOk: false };
+      // teardown 後 / 別 watcher への乗り換え後は本 watcher の handler/timer を no-op 化する。
+      // 連続 preset 押下時に前 watcher の setInterval 残骸が new entry に annotate を
+      // 書き込む経路を塞ぐ (#144)
+      const isStale = () => this._heartbeatState?.tok !== tok;
       const handler = (e) => {
+        if (isStale() || state.frozen) return;
         const d = e.data;
-        if (!d || d.tok !== tok || state.frozen) return;
+        if (!d || d.tok !== tok) return;
         if (d.type === "vibe-heartbeat") {
           state.gotFirst = true;
           state.lastBeat = Date.now();
@@ -643,6 +659,10 @@ ${code}
       };
       window.addEventListener("message", handler);
       const timerId = setInterval(() => {
+        if (isStale()) {
+          clearInterval(timerId);
+          return;
+        }
         if (state.frozen) return;
         const now = Date.now();
         if (!state.gotFirst) {
