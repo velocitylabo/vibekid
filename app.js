@@ -124,7 +124,6 @@ document.addEventListener("alpine:init", () => {
       { text: "ねこがはしる", emoji: "🐱", category: "action" },
       { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
       { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
-      { text: "ほしがきらきらひかる", emoji: "⭐", category: "visual" },
       { text: "あめがふる", emoji: "☔", category: "visual" },
     ],
 
