@@ -185,5 +185,4 @@ print(tokenizer.decode(out[0], skip_special_tokens=True))
 ## Repo links
 
 - VibeKid Web app: <https://github.com/velocitylabo/vibekid>
-
 - Kaggle submission: <!-- KAGGLE_SUBMISSION_URL_PLACEHOLDER -->

@@ -173,7 +173,7 @@
 # - oneshot あり: app.js の system prompt（few-shot example 含む）を採用
 # - oneshot なし: 最小 system prompt のみ
 #
-# 文言は SFT 訓練時の system prompt と同期させる。
+# 文言は SFT 訓練時の system prompt (`sft/data/SYSTEM_PROMPT.txt`) と同期させる。
 
 # %%
 # TODO: system prompt 定義（2 variant）
