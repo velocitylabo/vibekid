@@ -26,10 +26,26 @@ pipeline_tag: text-generation
 - **Adapter type**: QLoRA r=16 α=32（text decoder layers のみ、multimodal 層は学習対象外）
 - **Train data**: 657 件（4/19 split、OpenRouter Gemini 2.5 Flash 合成）
 - **Eval data**: 100 件（カテゴリ均等、4/19 cutoff）
-- **Hardware**: Colab Pro T4 16GB、1 epoch ≈ 2-3h
+- **Hardware**: Colab Pro A100 40GB（bf16 native）、3 epochs ≈ 27min
 - **Adapter size**: ~50MB
 
-## Ablation summary
+## Training metrics (validation loss curve)
+
+訓練中の eval split (100 件) に対する cross-entropy loss の推移:
+
+| Step | Training Loss | Validation Loss |
+|------|---------------|-----------------|
+| 50   | 0.732 | 3.00 |
+| 100  | 0.507 | **2.98**（最低） |
+| 150  | 0.416 | 3.06 |
+| 200  | 0.336 | 3.05 |
+| 249  | 0.328 | 3.05 |
+
+3 epochs (249 steps、effective batch=8) で **train_loss 0.99 → 0.33**（66% 低下）、**val_loss は 3 step 100 付近で収束**（軽微 overfit 兆候、step 100 〜 249 でほぼ横ばい）。1 epoch run 時の eval_loss 6.34 → 3 epoch run 3.05 と **半分以下に改善**。
+
+注: 訓練終了直後の追加 eval で `eval_loss=NaN` が一度観測（pad token = eos token に起因の可能性、attention_mask 警告を伴う）。**訓練中の eval は全て finite** で、adapter 自体は健全。
+
+## exec_success_rate (Playwright 実機評価、TBD)
 
 <!-- ABLATION_BAR_CHART_PLACEHOLDER -->
 
@@ -39,7 +55,18 @@ pipeline_tag: text-generation
 | Baseline (`google/gemma-4-E2B-it` + app one-shot system prompt) | <!-- BASELINE_SYS --> / 100 | 100 |
 | **Fine-tuned (this adapter)** | **<!-- SFT_SCORE --> / 100** | 100 |
 
-`exec_success_rate` = "生成された p5.js コードが (a) Playwright 環境で 5 秒間 SyntaxError / ReferenceError なしに `setup()` + `draw()` を実行し、(b) heartbeat を返す" 件数 / 全件。詳細は `evaluate.mjs` を参照。
+`exec_success_rate` = "生成された p5.js コードが (a) Playwright 環境で 5 秒間 SyntaxError / ReferenceError なしに `setup()` + `draw()` を実行し、(b) heartbeat を返す" 件数 / 全件。`sft/scripts/evaluate.mjs` で計測（本 model card 公開時点では未実施、別 PR で数値追記予定）。
+
+## 質的観察
+
+3 epoch fine-tune 後の生成サンプル（5 prompt × 1 run）目視評価:
+
+- ✅ **Drawing detail 向上**: base model の「赤い四角」→ ねこ preset で「白いネコの体・耳・瞳」など具体物的描写
+- ✅ **Visual loop**: 「はなびがどかーん」prompt で `for` ループによる random 円 + 線描画の自然な animation 表現
+- ⚠️ **Animation logic**: 「ぴょんぴょんはねる」で animation コメント + `let yPos` を試行するが、変数を `draw()` 内 local 宣言する pattern が残る（global scope への移行は未学習）
+- ⚠️ **Interactive event**: 「もぐらたたきゲーム」で `mousePressed` ハンドラを書こうとするが、変数 scope（`setup()` 内 `let`）の bug が残存
+
+これらは VibeKid アプリ側の手動確認で観察された pattern。
 
 ## Training recipe
 
@@ -49,10 +76,11 @@ pipeline_tag: text-generation
 - seq_len: 512
 - batch_size: 1, gradient_accumulation_steps: 8 → effective batch = 8
 - learning_rate: 2e-4, lr_scheduler_type: cosine, warmup_ratio: 0.03
-- num_train_epochs: 1
+- num_train_epochs: 3
 - optimizer: paged_adamw_8bit
 - max_grad_norm: 0.3
-- save_steps: 50, evaluation_strategy: "no"（NotebookProgressCallback bug 回避、`evaluate.mjs` で post-hoc 計測）
+- save_steps: 100 (save_total_limit=3), eval_steps: 50, eval on full eval split each call
+- training time: 1608 s (~26.8 min) on Colab Pro A100 40GB
 
 完全な `training_args.json`:
 
