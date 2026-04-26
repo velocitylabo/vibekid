@@ -554,18 +554,22 @@ function draw() {
     },
 
     extractCodeBlock(text) {
+      // 末尾 orphan `/` を除去する。Gemma 4 が稀に閉じ fence 直前に `}/` のような形で
+      // 余分な `/` を吐き、JS parser が regex 開始として解釈 → SyntaxError で preview
+      // 失敗する経路（#139 / `くろい まるが うごくやつ` で再現）を救う。
+      const stripTrailingSlash = (code) => code.replace(/\/+\s*$/, "").trimEnd();
       // p5.js モード: ```js または ```javascript ブロックを抽出
       // Gemma 4 E2B が稀に冒頭で ```js\n```js\n... と二重 fence を出力するため、
       // 連続する開き fence を 1 つに畳んでから抽出する（#127 / #140 / あめがふる 6/6 再現）
       const normalized = text.replace(/```(?:js|javascript)\s*(?=```(?:js|javascript)\s*)/g, "");
       const fenced = normalized.match(/```(?:js|javascript)\s*([\s\S]*?)```/);
-      if (fenced) return fenced[1].trim();
+      if (fenced) return stripTrailingSlash(fenced[1].trim());
       // fallback: マーカーなしで function setup() / draw() を含む素の JS
       const raw = text.match(/(function\s+setup\s*\(\)[\s\S]*?function\s+draw\s*\(\)[\s\S]*?)(?:\n\s*(?:```|$))/);
-      if (raw) return raw[1].trim();
+      if (raw) return stripTrailingSlash(raw[1].trim());
       // より緩い fallback: setup と draw の両方を含むテキスト全体
       if (/function\s+setup\s*\(\)/.test(text) && /function\s+draw\s*\(\)/.test(text)) {
-        return text.trim();
+        return stripTrailingSlash(text.trim());
       }
       return null;
     },
