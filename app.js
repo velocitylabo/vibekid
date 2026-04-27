@@ -266,10 +266,18 @@ function draw() {
 ルール:
 - 変数は function の外で let で宣言する
 - 関数は必ず setup() と draw() を書く
-- createCanvas(400, 400) を使う
+- createCanvas(400, 400) は setup() の中で必ず呼ぶ
 - background() を draw の最初に呼ぶ
 - 変数名は ballX, bgColor, myScore のような分かりやすい名前を使う
+- 変数名は英数字とアンダースコアのみ（日本語の変数名は使わない）
 - p5.js の組み込み関数名（color, fill, background, width, height）を変数名にしない
+- color() / createVector() などの p5.js 関数は setup() より前で呼ばない
+  - NG: let myColor = color(255, 0, 0);  ← top-level で color() はエラー
+  - OK: let myColor = '#ff0000';         ← 文字列で持つ
+- 色のリストは hex 文字列で持つ: let cols = ['#ff4444', '#ffaa00', '#ffee00']
+- クリック処理は mousePressed() 関数で書く
+- 当たり判定は dist(mouseX, mouseY, x, y) < 半径 で書く
+- 複数オブジェクトは array で持つ: let items = [{x: 100, y: 100}, ...]
 - 短く、動くコードだけ書く（20〜40行程度）
 - \`\`\`js で囲んで出力する
 
