@@ -523,92 +523,15 @@ else:
     print("       手元 RTX 2060 Mobile 16GB RAM は swap 併用で OOM リスク 50/50、cloud CPU 1h (~$0.5) が確実")
 
 # %% [markdown]
-# ## 9.5. 100 件 eval set 一括生成 (#163 / C-4)
-#
-# `sft/data/eval.jsonl` (100 件) を SFT (LoRA Phase 4) で **deterministic** generate → JSON dump。
-# ローカル `sft/scripts/validate-results.mjs` (Playwright) で execute → exec_success_rate 計算。
-#
-# Web 経路 (LiteRT) は Gemma 4 LoRA 公式未対応 (#129、`@mediapipe/tasks-genai` の LoRA 対応モデルは
-# Gemma-2 / Phi-2 限定) のため Notebook 経路で代替計測する。validate ロジックは
-# `sft/eval-validate-runner.html` で `sft/eval-runner.html` (Web baseline 計測) と同一実装。
-#
-# **前提**: Kaggle Dataset `vibekid-sft-data` の中に `eval.jsonl` が同梱されていること
-# (talk-sample repo の `sft/data/eval.jsonl` を Dataset の追加版に upload)。
-# memory `project_external_research_findings.md` の Section 8 経路 (HF Hub adapter ロード) でも実行可。
-
-# %%
-import json
-import time
-
-EVAL_PATH = os.path.join(DATA_DIR, "eval.jsonl")
-EVAL_OUT_PATH = os.path.join(MERGED_DIR, "eval_phase4_sft.json")
-
-assert os.path.exists(EVAL_PATH), (
-    f"eval.jsonl not found at {EVAL_PATH}. "
-    "Kaggle Dataset 'vibekid-sft-data' に talk-sample の sft/data/eval.jsonl を追加 upload してください。"
-)
-
-eval_prompts = [json.loads(line) for line in open(EVAL_PATH).read().splitlines() if line.strip()]
-print(f"loaded {len(eval_prompts)} eval prompts from {EVAL_PATH}")
-
-SYSTEM = open(SYSTEM_PROMPT_PATH).read().strip()  # app-oneshot 系 (production 経路と同一)
-
-results = []
-t_start = time.time()
-for idx, item in enumerate(eval_prompts):
-    prompt_text = item["prompt"]
-    messages = [{
-        "role": "user",
-        "content": [{"type": "text", "text": f"{SYSTEM}\n\n{prompt_text}"}],
-    }]
-    inputs = tokenizer.apply_chat_template(
-        messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
-    ).to("cuda")
-    t0 = time.time()
-    out = model.generate(
-        inputs,
-        max_new_tokens=1024,
-        do_sample=False,  # deterministic (memory feedback_gemma_determinism.md)
-    )
-    gen_secs = time.time() - t0
-    raw_text = tokenizer.decode(out[0][inputs.shape[1]:], skip_special_tokens=True)
-    results.append({
-        "idx": idx,
-        "prompt": prompt_text,
-        "category": item.get("category"),
-        "difficulty": item.get("difficulty"),
-        "raw_text": raw_text,
-        "gen_secs": gen_secs,
-    })
-    if (idx + 1) % 10 == 0:
-        elapsed = time.time() - t_start
-        est_total = elapsed * len(eval_prompts) / (idx + 1)
-        print(f"  [{idx + 1}/{len(eval_prompts)}] elapsed={elapsed:.1f}s, est_total={est_total:.1f}s")
-
-mean_gen = sum(r["gen_secs"] for r in results) / max(1, len(results))
-with open(EVAL_OUT_PATH, "w", encoding="utf-8") as f:
-    json.dump({
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "model": "vibekid-gemma-4-E2B-lora-phase4",
-        "system_prompt": "app-oneshot (SYSTEM_PROMPT.txt)",
-        "max_new_tokens": 1024,
-        "do_sample": False,
-        "n": len(results),
-        "mean_gen_secs": mean_gen,
-        "results": results,
-    }, f, ensure_ascii=False, indent=2)
-print(f"\n[saved] {EVAL_OUT_PATH}")
-print(f"  n={len(results)}, mean_gen_secs={mean_gen:.2f}s")
-print(f"\n次: 本 JSON ({EVAL_OUT_PATH}) をローカルに DL → `node sft/scripts/validate-results.mjs --in=<path>` で execute")
-
-# %% [markdown]
 # ## 10. 次のステップ（本ノートブックの外）
 #
 # 1. `OUT_MERGED`（= Drive）から手元 RTX 2060 環境に `rclone` / Drive 共有リンクで回収
 # 2. `ai-edge-torch` で `.task` / `.litertlm` に変換は **#129 で toolchain 不在確定**、
 #    submission 期間内は LiteRT-LM の公式対応待ち (`project_post_submission_webgpu_path.md`)
-# 3. **9.5 で出力した `eval_phase4_sft.json` をローカル DL → `node sft/scripts/validate-results.mjs --in=<path>`
-#    で 100 件 execute → exec_success_rate を取得 → HF model card `<!-- SFT_SCORE -->` 埋め (#163 / C-4)**
+# 3. **#163 / C-4 経路の 100 件 eval は別 notebook (`sft/notebook/eval-sft-100.py`) で実行**
+#    (HF Hub から adapter direct load で training skip、self-contained で Drive / Kaggle Dataset 不要)。
+#    実行後 `eval_phase4_sft.json` をローカル DL → `node sft/scripts/validate-results.mjs --in=<path>`
+#    で 100 件 execute → SFT_SCORE 確定 → HF model card placeholder 埋め
 # 4. RAFT Round 1 の reward 計算用に LoRA adapter を temporary で利用
 #
 # **Google One 5/11 失効前の cleanup**:
