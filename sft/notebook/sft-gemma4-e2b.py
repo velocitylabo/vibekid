@@ -10,13 +10,22 @@
 # %% [markdown]
 # # Gemma 4 E2B SFT — VibeKid
 #
-# **Status: 骨組み + checkpoint resume 対応 (4/19)。本番 run は 4/25 Colab Pro で実行**
+# **Status**:
+# - 4/19 骨組み + Colab checkpoint resume 対応
+# - 4/25 Colab Pro で本番 run 実行 (`velocitylabo/vibekid-gemma-4-E2B-lora` 公開)
+# - **4/29 Phase 4 (#179) — EOS 修復: train_on_responses_only + tokenizer sanity check 追加**
 #
 # - Model: `unsloth/gemma-4-E2B-it`
 # - LoRA r=16 α=32, text decoder のみ（multi-modal 層汚染防止）
 # - bf16（T4 Colab Pro、Unsloth が float16 infinite activation を回避）
 # - seq_len 512, batch 1, grad_accum 8 → 1 epoch ≈ 2-3h
 # - Data: `sft/data/train.jsonl` (657件) / `sft/data/eval.jsonl` (100件, category 均等)
+# - 環境: Colab (元) / Kaggle (Phase 4 再訓練) / ローカル GPU の三本立て
+#
+# **Phase 4 (#179) 介入の根拠** (research spike, 2026-04-29):
+# - `train_on_responses_only` 不在で gradient 希釈 (Unsloth 公式推奨、VERIFIED)
+# - `<end_of_turn>` token re-encoding 問題 (PEFT #1003 既知地雷)
+# - `pad_token == eos_token` で EOS 学習信号減衰 (TRL doc 警告)
 #
 # **Gemma 4 固有地雷（既知）**:
 # - `chat_template.jinja` が tokenizer_config に非同梱（transformers #45205）→ Unsloth が吸収
@@ -63,28 +72,49 @@
 !pip install --quiet --no-deps trl peft accelerate bitsandbytes datasets
 
 # %% [markdown]
-# ## 1b. Google Drive mount + checkpoint ディレクトリ
+# ## 1b. 環境検出 + path 解決
 #
-# **12h セッション切れ対策**: checkpoint と merged weight は全て Drive に永続化する。
-# 再接続時は同じセル群をそのまま実行すれば `get_last_checkpoint` 経由で resume。
+# 三環境を自動判定:
+# - **Colab**: `/content/drive/MyDrive/vibekid-sft-{ckpt,data,merged}/` (12h セッション再開対応)
+# - **Kaggle**: `/kaggle/input/vibekid-sft-data/` (read-only Dataset) +
+#   `/kaggle/working/vibekid-sft-{ckpt,merged}/` (write 可、9h 制限後セッションでも残る)
+# - **ローカル**: `./sft/data/` + `./vibekid-sft-{ckpt,merged}/`
+#
+# Phase 4 (#179) 再訓練は Kaggle T4 で実施想定。Kaggle Dataset 名は `vibekid-sft-data` で
+# `train.jsonl` / `eval.jsonl` / `SYSTEM_PROMPT.txt` を upload。
 
 # %%
 import os
 
 IS_COLAB = False
+IS_KAGGLE = os.path.exists("/kaggle/input") or os.environ.get("KAGGLE_KERNEL_RUN_TYPE")
+
 try:
     from google.colab import drive  # type: ignore
     drive.mount("/content/drive")
     IS_COLAB = True
 except ImportError:
-    print("[warn] google.colab not available — ローカル実行とみなす")
+    pass
 
-CKPT_DIR = "/content/drive/MyDrive/vibekid-sft-ckpt" if IS_COLAB else "./vibekid-sft-ckpt"
-DATA_DIR = "/content/drive/MyDrive/vibekid-sft-data" if IS_COLAB else "./sft/data"
-MERGED_DIR = "/content/drive/MyDrive/vibekid-sft-merged" if IS_COLAB else "./vibekid-sft-merged"
+if IS_COLAB:
+    CKPT_DIR = "/content/drive/MyDrive/vibekid-sft-ckpt"
+    DATA_DIR = "/content/drive/MyDrive/vibekid-sft-data"
+    MERGED_DIR = "/content/drive/MyDrive/vibekid-sft-merged"
+elif IS_KAGGLE:
+    # Dataset 名は user が upload 時に設定 ("vibekid-sft-data" 想定)
+    DATA_DIR = "/kaggle/input/vibekid-sft-data"
+    CKPT_DIR = "/kaggle/working/vibekid-sft-ckpt"
+    MERGED_DIR = "/kaggle/working/vibekid-sft-merged"
+    print("[env] Kaggle detected (input read-only / working write 可)")
+else:
+    print("[env] ローカル GPU 実行とみなす")
+    CKPT_DIR = "./vibekid-sft-ckpt"
+    DATA_DIR = "./sft/data"
+    MERGED_DIR = "./vibekid-sft-merged"
 
 os.makedirs(CKPT_DIR, exist_ok=True)
 os.makedirs(MERGED_DIR, exist_ok=True)
+# DATA_DIR は Kaggle で read-only なので mkdir 試行しない
 
 print(f"[paths] CKPT_DIR={CKPT_DIR}")
 print(f"[paths] DATA_DIR={DATA_DIR}")
@@ -123,6 +153,47 @@ model, tokenizer = FastModel.from_pretrained(
 
 print(f"[model] {MODEL_NAME} loaded, max_seq_length={MAX_SEQ_LENGTH}")
 print(f"[tokenizer] chat_template: {'gemma' in (tokenizer.chat_template or '').lower()}")
+
+# %% [markdown]
+# ## 2.5. Tokenizer 健全性チェック (Phase 4 #179、pre-train)
+#
+# Phase 4 介入の前提条件確認。post-train でも同じ check を回して regression を検出する。
+#
+# - **#1**: `<end_of_turn>` が単一 token（PEFT issue #1003 — fine-tune 後に複数 sub-token に
+#   分裂すると `model.generate()` が EOS 検出不能で無限生成する既知地雷）
+# - **#3**: `pad_token != eos_token` （TRL doc 警告 — padding mask で EOS が ignore label に
+#   変換され学習信号減衰）
+
+# %%
+def _check_eot_single_token(tok, label="pre-train"):
+    inner = getattr(tok, "tokenizer", tok)  # Gemma 4 multimodal processor 対応
+    eot_ids = inner.encode("<end_of_turn>", add_special_tokens=False)
+    print(f"[sanity-eot/{label}] <end_of_turn> -> token ids {eot_ids}")
+    assert len(eot_ids) == 1, (
+        f"<end_of_turn> が {len(eot_ids)} tokens に分裂 (PEFT #1003 該当)。"
+        "fine-tune 後に EOS 検出失敗で無限生成する。tokenizer / chat_template 確認要。"
+    )
+    return eot_ids[0]
+
+EOT_TOKEN_ID = _check_eot_single_token(tokenizer, "pre-train")
+
+# pad_token vs eos_token (TRL #4147、SFT Trainer doc warning)
+inner_tok = getattr(tokenizer, "tokenizer", tokenizer)
+pad_id = inner_tok.pad_token_id
+eos_id = inner_tok.eos_token_id
+print(f"[sanity-pad] pad_token_id={pad_id} (`{inner_tok.pad_token}`) "
+      f"/ eos_token_id={eos_id} (`{inner_tok.eos_token}`)")
+if pad_id == eos_id:
+    print("[sanity-pad] WARN: pad_token == eos_token、TRL 警告対象。")
+    print("            padding mask で EOS が ignore label 化、学習信号減衰の可能性。")
+    # 自動修正: <unk> や <pad> 等の専用 token がある場合のみ振り替え
+    if inner_tok.unk_token_id is not None and inner_tok.unk_token_id != eos_id:
+        inner_tok.pad_token = inner_tok.unk_token
+        print(f"[sanity-pad] FIX: pad_token を unk_token (id={inner_tok.pad_token_id}) に変更")
+    else:
+        print("[sanity-pad] FIX skipped: 適切な代替 token 見つからず、手動対応必要")
+else:
+    print("[sanity-pad] OK: pad と eos は別 token")
 
 # %% [markdown]
 # ## 3. LoRA 設定
@@ -256,6 +327,27 @@ trainer = SFTTrainer(
 )
 
 # %% [markdown]
+# ## 6.5. train_on_responses_only 適用 (Phase 4 #179、Hypothesis A)
+#
+# user turn (long system prompt) の loss を mask して、assistant turn のみで loss を取る。
+# Unsloth 公式 Gemma 4 fine-tuning ガイド推奨。chat-style SFT で事実上必須。
+#
+# 効果: assistant 末尾 `<end_of_turn>` 学習に勾配が集中、EOS 出力確率が上がる。
+# Phase 2 観測の SFT+oneshot cap 43% / SFT+bare cap 100% の改善を狙う。
+
+# %%
+from unsloth.chat_templates import train_on_responses_only
+
+trainer = train_on_responses_only(
+    trainer,
+    instruction_part="<start_of_turn>user\n",
+    response_part="<start_of_turn>model\n",
+)
+print("[setup] train_on_responses_only applied")
+print("        instruction_part='<start_of_turn>user\\n' (loss masked)")
+print("        response_part='<start_of_turn>model\\n' (loss computed)")
+
+# %% [markdown]
 # ## 7. Train（checkpoint resume 対応）
 #
 # - CKPT_DIR に既存 checkpoint があれば自動 resume
@@ -281,6 +373,20 @@ else:
     trainer_stats = trainer.train()
 
 print(trainer_stats)
+
+# %% [markdown]
+# ## 7.5. Tokenizer 健全性チェック (Phase 4 #179、post-train)
+#
+# fine-tune 後に `<end_of_turn>` token が分裂していないことを確認 (PEFT #1003)。
+# 分裂検出 → 即 alarm、merged_4bit 経路 / generate 経路で EOS 検出失敗の前兆。
+
+# %%
+EOT_POST = _check_eot_single_token(tokenizer, "post-train")
+assert EOT_POST == EOT_TOKEN_ID, (
+    f"<end_of_turn> が SFT 前後で変化 ({EOT_TOKEN_ID} → {EOT_POST})、"
+    f"PEFT #1003 顕在化、generate 経路で EOS 検出不能になる"
+)
+print(f"[sanity-eot/post-train] OK: token id {EOT_POST} 不変")
 
 # %% [markdown]
 # ## 8. Eval loss + サンプル生成
