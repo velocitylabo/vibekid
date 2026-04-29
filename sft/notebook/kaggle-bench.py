@@ -541,3 +541,177 @@ df_compare
 #   （[issue #45205](https://github.com/huggingface/transformers/issues/45205)）。
 #   Unsloth が吸収するので本 notebook では明示対応不要。
 # - 本 notebook は Web bench (#127) と数値直接比較不可、ablation の **相対** 効果のみを論じる。
+
+# %% [markdown]
+# ## 11. Writeup 用詳細分析（#172）
+#
+# Section 8 の集計を writeup の Methodology / Results 節で使える粒度に拡張する。
+# 4 つのサブ分析:
+#
+# - 11a. **prompt length ablation の独立 table**: short/normal/long を `(use_lora, use_oneshot)` で
+#   crosstab し、preset 間の差に埋もれない length 単独効果を見る
+# - 11b. **output_tokens 分布**: bare で 512 cap 到達率を出して EOS finding の根拠数字に変換
+# - 11c. **total_ms UX 影響**: oneshot 効果を end-user 体感秒数で可視化（base/bare vs SFT/oneshot で約 2x 差）
+# - 11d. **good/bad code sample 抽出**: writeup Results 節の例示用、各構成の最小 1 件
+
+# %% [markdown]
+# ### 11a. prompt length ablation 独立 table
+#
+# Section 8 の `df_length` は preset と混在しない pivot だが、std を出して再現性まで
+# 見えるようにする（n=3 だが Gemma 4 は決定論的なので std≒0 のはず、外れ値検知用）。
+
+# %%
+df_length_full = (
+    df.query("prompt_kind == 'length'")
+    .groupby(["use_lora", "use_oneshot", "prompt_key"])[TIMING_COLS]
+    .agg(["median", "std"])
+    .round(1)
+)
+print("[11a] length ablation: median ± std by (use_lora, use_oneshot, length)")
+df_length_full
+
+# %% [markdown]
+# ### 11b. output_tokens 分布と 512 cap 到達率
+#
+# 主要 finding 「SFT alone は EOS を覚えない、system prompt が必須」の根拠数字。
+# `cap512_rate` は `output_tokens >= 512` の割合（max_new_tokens に張り付いた = EOS 出ず）。
+
+# %%
+def _cap_rate(s, cap: int = 512) -> float:
+    return float((s >= cap).mean())
+
+
+df_token_dist = (
+    df.groupby(["use_lora", "use_oneshot"])["output_tokens"]
+    .agg(
+        median="median",
+        p25=lambda s: s.quantile(0.25),
+        p75=lambda s: s.quantile(0.75),
+        cap512_rate=_cap_rate,
+        n="count",
+    )
+    .round(2)
+)
+print("[11b] output_tokens distribution by (use_lora, use_oneshot)")
+print("       cap512_rate = max_new_tokens に張り付いた run の割合（EOS 出ず）")
+df_token_dist
+
+# %% [markdown]
+# ### 11c. total_ms UX 影響
+#
+# end-user が「待つ秒数」。oneshot 効果は decode tok/s より total_ms の方が直感的。
+
+# %%
+df_ux = (
+    df_summary
+    .pivot_table(
+        index=["prompt_kind", "prompt_key"],
+        columns=["use_lora", "use_oneshot"],
+        values="total_ms",
+    )
+    .round(0)
+)
+print("[11c] total_ms by (use_lora, use_oneshot) — preset と length 統合")
+df_ux
+
+# %% [markdown]
+# ### 11d. good / bad code sample 抽出
+#
+# writeup Results 節の例示に使う。判定:
+# - **fail flag**: `output_tokens >= 512`（EOS 失敗）or `output_chars < 50`（短すぎ・空）
+# - **good**: SFT + oneshot + preset（本番想定構成）で fail でない、`run_idx == 0` の最初 1 件
+# - **bad**: base + bare（EOS 学習なし）で `run_idx == 0` の最初 1 件、cap 到達例として
+#
+# 各 preset で good/bad 1 件ずつ = 計 8 件想定（4 preset × 2 quality）。
+
+# %%
+df_q = df.assign(
+    fail_eos_cap=df["output_tokens"] >= 512,
+    fail_empty=df["output_chars"] < 50,
+)
+df_q["fail"] = df_q["fail_eos_cap"] | df_q["fail_empty"]
+
+SAMPLE_COLS = ["prompt_key", "output_tokens", "output_chars", "total_ms", "fail", "output_text"]
+
+df_good = (
+    df_q.query(
+        "use_lora == True and use_oneshot == True and prompt_kind == 'preset' "
+        "and run_idx == 0 and fail == False"
+    )[SAMPLE_COLS]
+    .reset_index(drop=True)
+)
+print("[11d-good] SFT + oneshot + preset（本番想定）の正常出力")
+df_good
+
+# %%
+df_bad = (
+    df_q.query(
+        "use_lora == False and use_oneshot == False and prompt_kind == 'preset' "
+        "and run_idx == 0"
+    )[SAMPLE_COLS]
+    .reset_index(drop=True)
+)
+print("[11d-bad] base + bare の cap 到達例")
+df_bad
+
+# %% [markdown]
+# ## 12. Writeup artifact export（#172）
+#
+# Kaggle Notebook の Output に CSV / png を書き出して、writeup ドラフト側で
+# プレースホルダ数字を実数で埋められるようにする。
+#
+# - `bench_runs.csv` (84 rows): `output_text` を含む raw runs。sample 抽出を後段でやり直す用
+# - `bench_summary.csv` (28 rows): `df_summary` そのまま、CSV にして再 import で図表生成
+# - `bench_samples.csv` (8 rows): 11d で抽出した good/bad code sample
+# - `bench_ablation_writeup.png` (dpi=200): writeup 用の高解像度版 figure、CC-BY 4.0 配布前提でキャプション付
+#
+# 出力先は Kaggle Notebook の `/kaggle/working/`（Run All 後 Output から download 可能）。
+
+# %%
+df.to_csv("bench_runs.csv", index=False)
+print(f"[export] bench_runs.csv  (n={len(df)})")
+
+df_summary.to_csv("bench_summary.csv", index=False)
+print(f"[export] bench_summary.csv  (n={len(df_summary)})")
+
+df_samples = pd.concat(
+    [df_good.assign(quality="good"), df_bad.assign(quality="bad")],
+    ignore_index=True,
+)
+df_samples.to_csv("bench_samples.csv", index=False)
+print(f"[export] bench_samples.csv  (n={len(df_samples)})")
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize=(13, 5.0))
+
+preset_oneshot_w = df_summary.query("prompt_kind == 'preset' and use_oneshot == True").pivot(
+    index="prompt_key", columns="use_lora", values="decode_tok_s"
+)
+preset_oneshot_w.plot(kind="bar", ax=axes[0], rot=0, color=["#888888", "#4477aa"])
+axes[0].set_title("decode tok/s by preset (oneshot=True)")
+axes[0].set_ylabel("decode tok/s")
+axes[0].legend(title="use_lora", labels=["base", "SFT"])
+
+length_lora_w = df_summary.query("prompt_kind == 'length' and use_lora == True").pivot(
+    index="prompt_key", columns="use_oneshot", values="ttft_ms"
+)
+length_lora_w = length_lora_w.reindex(["short", "normal", "long"])
+length_lora_w.plot(kind="bar", ax=axes[1], rot=0, color=["#aa6644", "#44aa66"])
+axes[1].set_title("TTFT by prompt length (SFT)")
+axes[1].set_ylabel("TTFT (ms)")
+axes[1].legend(title="use_oneshot", labels=["bare", "oneshot"])
+
+fig.suptitle(
+    "VibeKid Gemma 4 E2B Ablation — Kaggle T4 (4-bit) bench, n=3 median",
+    fontsize=12,
+)
+fig.text(
+    0.5, -0.02,
+    "Source: kaggle-bench.py 84 runs / CC-BY 4.0",
+    ha="center", fontsize=9,
+)
+
+plt.tight_layout()
+plt.savefig("bench_ablation_writeup.png", dpi=200, bbox_inches="tight")
+plt.show()
+print("[export] bench_ablation_writeup.png  (dpi=200, captioned)")
