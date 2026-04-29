@@ -1,0 +1,274 @@
+prompt_key,output_tokens,output_chars,total_ms,fail,output_text,quality
+button,228,558,35736.3,False,"```js
+let buttonX = 50;
+let buttonY = 50;
+let btnW = 100;
+let btnH = 40;
+let btnColor = '#4CAF50';
+let hoverColor = '#66BB6A';
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+  fill(btnColor);
+  rect(buttonX, buttonY, btnW, btnH);
+  fill(hoverColor);
+  rect(buttonX + btnW - 1, buttonY + btnH - 1, btnW - 1, btnH - 1);
+}
+
+function mousePressed() {
+  if (mouseX > buttonX && mouseX < buttonX + btnW && mouseY > buttonY && mouseY < buttonY + btnH) {
+    btnColor = hoverColor;
+  } else {
+    btnColor = btnColor;
+  }
+}
+```",good
+ame,227,533,35831.6,False,"```js
+let rainRate = 5;
+let rainColor = '#add8e6';
+let rainItems = [];
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+
+  // 雨を降らせる
+  for (let i = 0; i < rainRate; i++) {
+    let r = random(20, 60);
+    let x = random(0, width);
+    let y = random(0, height);
+    rainItems.push({x: x, y: y, r: r, c: rainColor});
+  }
+
+  // 雨を描画する
+  for (let i = 0; i < rainItems.length; i++) {
+    let item = rainItems[i];
+    fill(item.c);
+    noStroke();
+    ellipse(item.x, item.y, item.r, item.r);
+  }
+}
+```",good
+neko,512,1014,62722.8,True,"はい、承知いたしました。p5.js を使って、猫が走る（動きのある）スケッチの基本的な例を書いてみます。
+
+この例では、猫のシンプルな図形（ここでは円や四角）を定義し、キーボードの入力に応じて猫が横に移動するようにします。
+
+### p5.js スケッチコード
+
+以下のコードを p5.js のエディタ（オンラインエディタなど）に貼り付けて実行してください。
+
+```javascript
+// 猫のオブジェクトを管理する変数
+let catX; // 猫の現在のX座標
+let catY; // 猫のY座標
+const catSize = 50; // 猫のサイズ
+const speed = 5; // 走る速度
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(600, 400);
+  
+  // 初期位置を設定
+  catX = 50;
+  catY = height / 2; // 画面の中央付近に配置
+}
+
+function draw() {
+  // 1. 背景をクリアする（毎回描画し直すことで動きを表現）
+  background(220, 240, 255); // 薄い青空のような色
+
+  // 2. 猫を描画する
+  fill(0, 0, 0); // 猫の色を黒に設定
+  noStroke(); // 輪郭線なし
+  
+  // 猫の描画 (ここでは単純な円で表現)
+  ellipse(catX, catY, catSize, catSize);
+  
+  // 3. 走るアニメーションの処理
+  // キーボードの左右キーが押されているかチェック
+  if (keyIsPressed) {
+    if (keyCode === LEFT_ARROW) {
+      // 左に移動 (X座標を減らす)
+      catX -= speed;
+    } else if (keyCode === RIGHT_ARROW) {
+      // 右に移動 (X座標を増やす)
+      catX += speed;
+    }
+  }
+
+  // 4. 画面の端で猫がはみ出さないように境界チェック
+  // 左端
+  if (catX < 0) {
+    catX = 0;
+  }
+  // 右端
+  if (catX",bad
+ball,512,1043,61294.1,True,"はい、承知いたしました。p5.js を使って、ボールが画面内で跳ねる（バウンドする）シンプルなスケッチを作成します。
+
+この例では、ボールを円として描き、重力と弾性（跳ね返り）の概念を実装します。
+
+### p5.js スケッチコード
+
+以下のコードを p5.js のエディタ（例：p5.js Web Editor）に貼り付けて実行してください。
+
+```javascript
+let ball;
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(600, 400);
+  
+  // ボールの初期位置とサイズを設定
+  ball = {
+    x: width / 2,      // X座標 (中央)
+    y: 50,              // Y座標 (上部から少し下)
+    radius: 20,         // 半径
+    vx: 5,              // X方向の速度 (水平方向の動き)
+    vy: 0               // Y方向の速度 (垂直方向の動き)
+  };
+}
+
+function draw() {
+  // 1. 背景を白で塗りつぶす
+  background(220);
+
+  // 2. ボールの描画
+  fill(255, 0, 0); // 赤色
+  noStroke();
+  ellipse(ball.x, ball.y, ball.radius * 2);
+
+  // 3. ボールの動きを計算し、更新する
+  
+  // Y方向の速度に重力を加える (加速度)
+  ball.vy += 0.3; // 重力（下に加速）
+  
+  // 位置を更新する
+  ball.y += ball.vy;
+  
+  // 4. 画面の壁との衝突判定と跳ね返り処理
+  
+  // 画面の底との衝突
+  if (ball.y + ball.radius > height) {
+    ball.y = height - ball.radius; // 境界に合わせる
+    ball.vy = -ball.vy;             // 速度を反転させる (跳ね返る)
+  }
+  
+  // 画面の左右の壁との衝突
+  if (ball.x + ball.radius > width || ball.x - ball.radius",bad
+button,518,1302,61479.0,True,"## p5.js でボタンを押すと色が変化するスケッチ
+
+ここでは、p5.js を使ってキャンバス上にボタン（四角形）を配置し、マウスでクリック（ボタンを押す）するとその色がランダムに変化するスケッチの例を示します。
+
+### HTML (index.html)
+
+まず、p5.js ライブラリとスケッチファイル（JavaScript）を読み込むための基本的なHTMLファイルが必要です。
+
+```html
+<!DOCTYPE html>
+<html lang=""ja"">
+<head>
+    <meta charset=""UTF-8"">
+    <title>色変更ボタン</title>
+    <script src=""https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js""></script>
+    <script src=""sketch.js""></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+</body>
+</html>
+```
+
+### JavaScript (sketch.js)
+
+これが実際の p5.js のコードです。
+
+```javascript
+let buttonX; // ボタンのX座標
+let buttonY; // ボタンのY座標
+let buttonSize = 50; // ボタンのサイズ
+let currentColor = 0; // 現在の色を管理する変数
+
+function setup() {
+    // キャンバスのサイズを設定
+    createCanvas(600, 400);
+    
+    // ボタンの初期位置を中央付近に設定
+    buttonX = width / 2 - buttonSize / 2;
+    buttonY = height / 2 - buttonSize / 2;
+    
+    // 初期色を設定（例: ランダムな色）
+    randomColor();
+}
+
+function draw() {
+    // 背景を少しずつ変化させる（任意）
+    background(220, 220, 255, 50); // 半透明で残像を残す
+    
+    // 現在の色でボタンを描画
+    fill(currentColor);
+    noStroke();
+    rect(buttonX, buttonY, buttonSize",bad
+ame,512,1080,61127.0,True,"はい、承知いたしました。p5.js を使って「雨が降っている」ような、シンプルな視覚効果を持つスケッチコードを書いてみましょう。
+
+この例では、白い点（雨粒）をランダムに生成し、画面をゆっくりと流れるように表示することで、雨のイメージを表現します。
+
+### p5.js スケッチコード
+
+以下のコードを p5.js エディタ（オンラインエディタなど）に貼り付けて実行してください。
+
+```javascript
+let rainDrops = []; // 雨粒を格納する配列
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(windowWidth, windowHeight);
+  // 初期化（雨粒を初期化）
+}
+
+function draw() {
+  // 1. 背景を少し暗くして、雨の雰囲気を出す
+  background(135, 200, 255, 50); // 薄い青みがかった背景
+
+  // 2. 新しい雨粒をランダムに生成する
+  // 画面の高さに合わせて、一定間隔で新しい雨粒を追加
+  if (random(1) < 0.1) { // 10%の確率で新しい雨粒を追加
+    rainDrops.push(new RainDrop());
+  }
+
+  // 3. 既存の雨粒を更新し、描画する
+  for (let i = rainDrops.length - 1; i >= 0; i--) {
+    rainDrops[i].update();
+    rainDrops[i].show();
+
+    // 画面外に出た雨粒は削除する
+    if (rainDrops[i].isOffScreen()) {
+      rainDrops.splice(i, 1);
+    }
+  }
+}
+
+// RainDrop クラスの定義
+class RainDrop {
+  constructor() {
+    // 雨粒の位置（X座標はランダム、Y座標は画面上部から開始）
+    this.x = random(width);
+    this.y = random(-height, 0); // 画面外の上部からスタート
+    this.size = random(1, 3); // 雨粒のサイズ
+    this.speed = random(2, 5); // 降る速度
+    this.color = color(255, 255",bad
