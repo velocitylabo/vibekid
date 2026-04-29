@@ -45,17 +45,21 @@ pipeline_tag: text-generation
 
 注: 訓練終了直後の追加 eval で `eval_loss=NaN` が一度観測（pad token = eos token に起因の可能性、attention_mask 警告を伴う）。**訓練中の eval は全て finite** で、adapter 自体は健全。
 
-## exec_success_rate (Playwright 実機評価、TBD)
+## exec_success_rate (Playwright 実機評価)
 
 <!-- ABLATION_BAR_CHART_PLACEHOLDER -->
 
-| Setup | exec_success_rate | n |
-|---|---|---|
-| Baseline (`google/gemma-4-E2B-it`, raw) | <!-- BASELINE_RAW --> / 100 | 100 |
-| Baseline (`google/gemma-4-E2B-it` + app one-shot system prompt) | <!-- BASELINE_SYS --> / 100 | 100 |
-| **Fine-tuned (this adapter)** | **<!-- SFT_SCORE --> / 100** | 100 |
+| Setup | exec_success_rate | n | 計測経路 |
+|---|---|---|---|
+| Baseline (`google/gemma-4-E2B-it`, raw) | **0 / 100** | 100 | Web (LiteRT) |
+| Baseline (`google/gemma-4-E2B-it` + app one-shot system prompt) | **0 / 100** | 100 | Web (LiteRT) |
+| **Fine-tuned (this adapter)** | **<!-- SFT_SCORE --> / 100** | 100 | Notebook (Python + Kaggle T4) |
 
-`exec_success_rate` = "生成された p5.js コードが (a) Playwright 環境で 5 秒間 SyntaxError / ReferenceError なしに `setup()` + `draw()` を実行し、(b) heartbeat を返す" 件数 / 全件。`sft/scripts/evaluate.mjs` で計測（本 model card 公開時点では未実施、別 PR で数値追記予定）。
+> Baseline 2 件はいずれも 0/100。100 件 eval set は base にとって難問で、raw は全件 prose 出力、system prompt 経由でも `no_canvas` が 94/100。SFT で改善余地が大きいことを示す。
+>
+> SFT は LiteRT Web で LoRA load する toolchain が公式未提供 (#129 / `docs/post-submission-litert-path.md`) のため Kaggle Notebook (Python + T4) で計測。validate ロジック (5 秒 heartbeat、iframe sandbox) は Web/Notebook 共通実装 (`sft/eval-runner.html` / `sft/eval-validate-runner.html`)。
+
+`exec_success_rate` = "(a) `setup()` + `draw()` + `createCanvas()` 静的検査 pass、(b) iframe sandbox で 5 秒間 SyntaxError / ReferenceError なしに実行、(c) `<canvas>` 描画" 件数 / 全件。eval set 100 件は `sft/data/eval.jsonl` に同梱。
 
 ## 質的観察
 

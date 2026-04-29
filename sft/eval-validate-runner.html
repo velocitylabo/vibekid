@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eval Validate Runner (Notebook 経路 SFT 結果用 / #163 C-4)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 16px; }
+  #status { padding: 8px; background: #eef; border-radius: 6px; font-size: 13px; white-space: pre-wrap; }
+  #status.ok { background: #e6f7ea; } #status.err { background: #fde8e8; }
+  button { padding: 8px 14px; font-size: 15px; margin: 6px 4px 0 0; }
+  button:disabled { opacity: 0.5; }
+  .bar { height: 6px; background: #ddd; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: #4a8; width: 0%; transition: width .2s; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: 12px; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 3px 6px; text-align: left; vertical-align: top; }
+  th { background: #eef; position: sticky; top: 0; }
+  td.fail { background: #fde8e8; }
+  td.pass { background: #e6f7ea; }
+  #sandbox { border: 0; width: 420px; height: 420px; }
+  #sandboxWrap { position: absolute; left: -10000px; top: -10000px; }
+  .meta { font-size: 12px; color: #666; }
+</style>
+</head>
+<body>
+<h1>Eval Validate Runner <span class="meta">Notebook 経路 SFT 結果の execute 評価 (#163 / C-4)</span></h1>
+<div id="status">待機中...</div>
+<div class="bar"><div id="bar"></div></div>
+
+<div>
+  <button id="run" disabled>Validate 開始</button>
+  <button id="download" disabled>結果を JSON で保存</button>
+</div>
+<div class="meta" id="summary"></div>
+
+<table id="results">
+  <thead><tr>
+    <th>#</th><th>category</th><th>prompt</th><th>pass</th><th>reasons</th>
+    <th>code len</th><th>has anim</th><th>shapes</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<div id="sandboxWrap"><iframe id="sandbox" sandbox="allow-scripts"></iframe></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status'), bar = $('bar'), runBtn = $('run'), dlBtn = $('download');
+const tbody = $('results').querySelector('tbody');
+const summaryEl = $('summary');
+
+const DATA_URL = new URLSearchParams(location.search).get('data');
+
+let inputData = null;
+let results = [];
+
+function log(msg, kind = '') {
+  statusEl.textContent = msg;
+  statusEl.className = kind;
+  console.log('[validate]', msg);
+}
+
+// validate ロジックは sft/eval-runner.html と同一実装 (duplicate by design、リファクタは別 issue)
+const P5_CDN = 'https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js';
+function wrapP5(code) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<script>
+window.addEventListener('error', function(e) {
+  window.parent.postMessage({__evalError: (e.error && e.error.message) || e.message || String(e)}, '*');
+});
+window.addEventListener('unhandledrejection', function(e) {
+  window.parent.postMessage({__evalError: 'unhandled: ' + (e.reason && e.reason.message || String(e.reason))}, '*');
+});
+<\/script>
+<script src="${P5_CDN}"><\/script>
+<style>html,body{margin:0;padding:0;background:#fff}canvas{display:block}</style>
+</head><body><script>
+try { ${code} } catch (e) { window.parent.postMessage({__evalError: String(e)}, '*'); }
+<\/script></body></html>`;
+}
+
+function extractCode(text) {
+  const m = text.match(/```(?:js|javascript)?\s*\n([\s\S]*?)```/);
+  return m ? m[1].trim() : '';
+}
+
+function staticChecks(code) {
+  const reasons = [];
+  if (!code || code.length < 80) reasons.push('code_too_short');
+  if (!/function\s+setup\s*\(\s*\)/.test(code)) reasons.push('missing_setup');
+  if (!/function\s+draw\s*\(\s*\)/.test(code)) reasons.push('missing_draw');
+  if (!/createCanvas\s*\(/.test(code)) reasons.push('missing_createCanvas');
+  if (/<script[\s>]|<\/script>/i.test(code)) reasons.push('raw_html_in_code');
+  if (/fetch\s*\(|XMLHttpRequest/i.test(code)) reasons.push('network_call');
+  if (/localStorage|sessionStorage|document\.cookie/.test(code)) reasons.push('storage_api_blocked');
+  if (/\balert\s*\(|\bconfirm\s*\(|\bprompt\s*\(|window\.open/.test(code)) reasons.push('modal_api_blocked');
+  return reasons;
+}
+
+function countShapes(code) {
+  const pat = /\b(rect|ellipse|circle|line|triangle|quad|arc|point|text|image|bezier)\s*\(/g;
+  const m = code.match(pat);
+  return m ? m.length : 0;
+}
+
+function hasAnimation(code) {
+  return /\b(frameCount|random|sin|cos|noise|millis)\s*\(/.test(code)
+      || /\b(mousePressed|mouseClicked|keyPressed|keyReleased|touchStarted|touchEnded)\s*\(/.test(code)
+      || /\+\s*=|\-=|\*=/.test(code);
+}
+
+async function runInSandbox(code, timeoutMs = 5000) {
+  return await new Promise((resolve) => {
+    const iframe = $('sandbox');
+    let evalError = null;
+    let canvasInfo = { hasCanvas: false };
+
+    const onMsg = (e) => {
+      if (e.data && e.data.__evalError) evalError = String(e.data.__evalError);
+    };
+    window.addEventListener('message', onMsg);
+
+    const cleanup = () => {
+      window.removeEventListener('message', onMsg);
+      iframe.srcdoc = '';
+    };
+
+    iframe.onload = async () => {
+      try {
+        const start = performance.now();
+        while (performance.now() - start < timeoutMs) {
+          try {
+            const doc = iframe.contentDocument;
+            const canvas = doc && doc.querySelector('canvas');
+            if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              canvasInfo = { hasCanvas: true, width: rect.width, height: rect.height };
+              break;
+            }
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (canvasInfo.hasCanvas) await new Promise((r) => setTimeout(r, 500));
+        cleanup();
+        resolve({ evalError, canvasInfo });
+      } catch (e) {
+        cleanup();
+        resolve({ evalError: String(e), canvasInfo });
+      }
+    };
+    iframe.srcdoc = wrapP5(code);
+  });
+}
+
+async function runValidate() {
+  runBtn.disabled = true;
+  const items = inputData.results || [];
+  if (items.length === 0) { log('❌ no items in input data', 'err'); return; }
+  results = [];
+  tbody.innerHTML = '';
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    log(`[${i + 1}/${items.length}] ${(it.prompt || '').slice(0, 40)}`);
+    const code = extractCode(it.raw_text || '');
+    const reasons = staticChecks(code);
+    let sandbox = { evalError: null, canvasInfo: { hasCanvas: false } };
+    if (reasons.length === 0) {
+      sandbox = await runInSandbox(code);
+      if (sandbox.evalError) reasons.push(`js_error:${sandbox.evalError.slice(0, 80)}`);
+      if (!sandbox.canvasInfo.hasCanvas) reasons.push('no_canvas');
+    }
+    const pass = reasons.length === 0;
+    const rec = {
+      idx: it.idx ?? i,
+      prompt: it.prompt,
+      category: it.category,
+      difficulty: it.difficulty,
+      pass,
+      reasons,
+      gen_secs: it.gen_secs,
+      code_length: code.length,
+      raw_length: (it.raw_text || '').length,
+      has_animation: hasAnimation(code),
+      shape_calls: countShapes(code),
+      canvas: sandbox.canvasInfo,
+      raw_text: it.raw_text,
+      code,
+    };
+    results.push(rec);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}</td><td>${it.category || ''}</td><td>${(it.prompt || '').slice(0, 40)}</td>`
+      + `<td class="${pass ? 'pass' : 'fail'}">${pass ? 'PASS' : 'FAIL'}</td>`
+      + `<td>${reasons.join(', ')}</td>`
+      + `<td>${code.length}</td>`
+      + `<td>${rec.has_animation ? '✓' : ''}</td><td>${rec.shape_calls}</td>`;
+    tbody.appendChild(tr);
+    bar.style.width = ((i + 1) / items.length * 100) + '%';
+  }
+  window.__VALIDATE_RESULTS__ = summarize(results);
+  dlBtn.disabled = false;
+  log(`✅ validate done: ${results.filter(r => r.pass).length}/${results.length} pass`, 'ok');
+  renderSummary();
+}
+
+function summarize(rs) {
+  const n = rs.length;
+  const pass = rs.filter(r => r.pass).length;
+  const mean = (f) => rs.reduce((a, r) => a + f(r), 0) / Math.max(1, n);
+  const reasonCounts = {};
+  for (const r of rs) for (const x of r.reasons) {
+    const k = x.split(':')[0];
+    reasonCounts[k] = (reasonCounts[k] || 0) + 1;
+  }
+  return {
+    ts: new Date().toISOString(),
+    model: inputData.model || 'unknown',
+    system_prompt: inputData.system_prompt || 'unknown',
+    source_input: DATA_URL,
+    n,
+    exec_success_rate: pass / Math.max(1, n),
+    mean_gen_secs: mean(r => r.gen_secs || 0),
+    mean_code_length: mean(r => r.code_length),
+    has_animation_rate: rs.filter(r => r.has_animation).length / Math.max(1, n),
+    mean_shape_calls: mean(r => r.shape_calls),
+    fail_reasons: reasonCounts,
+    results: rs,
+  };
+}
+
+function renderSummary() {
+  const s = window.__VALIDATE_RESULTS__;
+  if (!s) return;
+  summaryEl.innerHTML = `<b>n=${s.n}</b> · exec_success=${(s.exec_success_rate * 100).toFixed(1)}% · `
+    + `mean_gen=${s.mean_gen_secs.toFixed(1)}s · mean_code=${s.mean_code_length.toFixed(0)} chars · `
+    + `has_animation=${(s.has_animation_rate * 100).toFixed(1)}% · `
+    + `mean_shape_calls=${s.mean_shape_calls.toFixed(1)}<br>`
+    + `fail: ${Object.entries(s.fail_reasons).map(([k, v]) => `${k}×${v}`).join(', ')}`;
+}
+
+runBtn.addEventListener('click', runValidate);
+dlBtn.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(window.__VALIDATE_RESULTS__, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.download = `validate_${ts}.json`;
+  a.click();
+});
+
+(async () => {
+  if (!DATA_URL) { log('❌ ?data=<url> 必須 (例: ?data=/_input/eval_phase4_sft.json)', 'err'); return; }
+  log(`fetching ${DATA_URL}...`);
+  try {
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error(`fetch ${res.status}`);
+    inputData = await res.json();
+    const n = (inputData.results || []).length;
+    log(`✅ loaded ${n} items from ${DATA_URL} (model=${inputData.model || 'unknown'})`, 'ok');
+    runBtn.disabled = false;
+  } catch (e) {
+    log(`❌ load failed: ${e.message || e}`, 'err');
+  }
+})();
+</script>
+</body>
+</html>
