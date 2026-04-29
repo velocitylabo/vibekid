@@ -2,9 +2,16 @@ const MODEL_URL = "./models/gemma-4-E2B-it-web.task";
 const MODEL_FILE = "gemma-4-E2B-it-web.task";
 
 // 生成ごとの prompt / raw response / validator / preview 結果を蓄積する ring buffer
-// (#137) 失敗率計測と fail mode 分類用。window.__vibeDiag.{list,dump,clear} で操作する
+// (#137) 失敗率計測と fail mode 分類用。window.__vibeDiag.{list,dump,clear,size,lastSeq} で操作する
 const DIAG_KEY = "vibe_diag_entries";
-const DIAG_MAX = 50;
+// 4/27 Plan B 計測 (#167) で 50 件超で sampling tool が timeout crash 発生、
+// 200 に bump (Plan B 9 preset × 6 runs = 54 件 + 将来の 100 件規模を見据える)。
+// localStorage 圧迫リスク: 1 entry ≈ 3-15KB、200 × 8KB = 1.6MB で quota 5-10MB 圏内 (#173)。
+const DIAG_MAX = 200;
+// monotonic counter (#173): ring buffer evict が起きても sampling tool の poll が壊れないように、
+// `lastSeq()` 経由で「次の push が起きたか」を size 比較ではなく seq 比較で判定する。
+// `_diagLoad` で entries から最大値を復元、`_diagClear` で 0 にリセット。
+let _diagSeq = 0;
 
 // 旧版「AI おしゃべりひろば」時代の Service Worker / Cache Storage を一掃する。
 // 以前アクセス済みのブラウザだけが対象。新規ユーザーには影響しない。
@@ -142,6 +149,8 @@ document.addEventListener("alpine:init", () => {
         dump: () => this._diagDump(),
         clear: () => this._diagClear(),
         size: () => this._diagEntries.length,
+        // monotonic counter、ring buffer evict と無関係に push 検出可 (#173)
+        lastSeq: () => _diagSeq,
       };
 
       // p5.js を iframe に inline 展開できるよう先に取得（CDN 断でもプレビュー/validator を機能させる）
@@ -506,7 +515,12 @@ function draw() {
         const raw = localStorage.getItem(DIAG_KEY);
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) this._diagEntries = parsed.slice(-DIAG_MAX);
+        if (Array.isArray(parsed)) {
+          this._diagEntries = parsed.slice(-DIAG_MAX);
+          // _diagSeq を entries から復元 (#173)。page reload 後に monotonic 性を維持。
+          // 旧 entries (`_seq` 未設定) が混在してもデフォルト 0 で safe。
+          _diagSeq = this._diagEntries.reduce((m, e) => Math.max(m, e._seq || 0), 0);
+        }
       } catch (e) {
         console.warn("[vibeApp] diag load 失敗", e);
       }
@@ -521,6 +535,9 @@ function draw() {
     },
 
     _diagPush(entry) {
+      // monotonic seq を entry に焼く (#173)。push 前に採番、ring buffer evict されても
+      // entry._seq は entries 配列内に保持され、`_diagLoad` で再復元可能。
+      entry._seq = ++_diagSeq;
       this._diagEntries.push(entry);
       if (this._diagEntries.length > DIAG_MAX) {
         this._diagEntries.splice(0, this._diagEntries.length - DIAG_MAX);
@@ -569,6 +586,7 @@ function draw() {
     _diagClear() {
       this._diagEntries = [];
       this._diagCurrent = null;
+      _diagSeq = 0;  // sampling session 開始時に reset (#173)
       try { localStorage.removeItem(DIAG_KEY); } catch (_) {}
     },
 

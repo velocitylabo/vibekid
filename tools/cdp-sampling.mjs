@@ -102,8 +102,18 @@ async function main() {
   await poll(`!!window.__vibeDiag`, 60000);
   // wait for modelReady before starting (initial bootstrap may take long)
   await poll(`(() => { const el = document.querySelector("[x-data]"); return el && Alpine.$data(el).modelReady === true; })()`, 300000);
+  // (#173) lastSeq() API 必須 assert。app.js が DIAG_MAX=200 + monotonic seq 対応版で
+  // ないと 51 件目で ring buffer evict が起きた時に poll(`size() > preCount`) 等価の旧実装が
+  // timeout crash する。app.js を fix/173 系の commit に揃えてから本 tool を回すこと。
+  const hasLastSeq = await evalExpr(`typeof window.__vibeDiag.lastSeq === "function"`);
+  if (!hasLastSeq) {
+    throw new Error(
+      "app.js が #173 patch 前のバージョン (window.__vibeDiag.lastSeq 未定義)。" +
+      "git pull + page reload してから sampling を再開してください。",
+    );
+  }
   await evalExpr(`window.__vibeDiag.clear()`);
-  console.log("[cdp] init ok, diag cleared");
+  console.log("[cdp] init ok, diag cleared (lastSeq API available)");
 
   // (4) sampling loop
   const runStart = Date.now();
@@ -114,7 +124,9 @@ async function main() {
       runIdx++;
       const tag = `[${runIdx}/${total}] ${preset.text} run${r + 1}`;
       const tStart = Date.now();
-      const preCount = await evalExpr(`window.__vibeDiag.size()`);
+      // (#173) ring buffer evict されても壊れない monotonic seq で push 検出。
+      // 旧 `size() > preCount` は 51 件目で size 50 維持 → poll が永遠に false で 5s timeout crash。
+      const preSeq = await evalExpr(`window.__vibeDiag.lastSeq()`);
 
       console.log(tag, "reload");
       await send("Page.reload", { ignoreCache: true });
@@ -136,8 +148,8 @@ async function main() {
         `Alpine.$data(document.querySelector("[x-data]")).isGenerating === false`,
         120000,
       );
-      // diag entry pushed in finally block
-      await poll(`window.__vibeDiag.size() > ${preCount}`, 5000);
+      // diag entry pushed in finally block — seq 増加で検出 (size 比較ではなく)
+      await poll(`window.__vibeDiag.lastSeq() > ${preSeq}`, 5000);
 
       // wait preview annotation (heartbeat 2.5s ok / 3s frozen)
       await new Promise((r) => setTimeout(r, POST_GENERATE_WAIT_MS));
