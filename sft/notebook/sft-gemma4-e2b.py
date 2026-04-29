@@ -159,21 +159,54 @@ print(f"[tokenizer] chat_template: {'gemma' in (tokenizer.chat_template or '').l
 #
 # Phase 4 介入の前提条件確認。post-train でも同じ check を回して regression を検出する。
 #
-# - **#1**: `<end_of_turn>` が単一 token（PEFT issue #1003 — fine-tune 後に複数 sub-token に
-#   分裂すると `model.generate()` が EOS 検出不能で無限生成する既知地雷）
+# - **#1**: 終端 token (Gemma 4 では `<turn|>`、id=106) が special vocab に登録され、
+#   chat_template で実際に出力される (PEFT issue #1003 — fine-tune 後に複数 sub-token に
+#   分裂すると `model.generate()` が EOS 検出不能で無限生成する既知地雷)
 # - **#3**: `pad_token != eos_token` （TRL doc 警告 — padding mask で EOS が ignore label に
 #   変換され学習信号減衰）
+#
+# **Gemma 4 token 命名注意** (memory `feedback_gemma4_token_naming.md`):
+# Gemma 4 は Gemma 1/2/3 系と命名が違い、`<end_of_turn>` ではなく `<turn|>` が終端 token。
+# `tokenizer.encode("<end_of_turn>", add_special_tokens=False)` は **literal split** され
+# 7 tokens に分裂、これを「PEFT #1003 該当」と誤判定しないため `convert_tokens_to_ids` 経由で
+# special vocab を直接参照する。
 
 # %%
 def _check_eot_single_token(tok, label="pre-train"):
-    inner = getattr(tok, "tokenizer", tok)  # Gemma 4 multimodal processor 対応
-    eot_ids = inner.encode("<end_of_turn>", add_special_tokens=False)
-    print(f"[sanity-eot/{label}] <end_of_turn> -> token ids {eot_ids}")
-    assert len(eot_ids) == 1, (
-        f"<end_of_turn> が {len(eot_ids)} tokens に分裂 (PEFT #1003 該当)。"
-        "fine-tune 後に EOS 検出失敗で無限生成する。tokenizer / chat_template 確認要。"
+    """終端 token が special vocab 内で単一 token として動作することを確認。
+
+    Gemma 4 では `<turn|>` (id=106)、tokenizer の `eot_token` 属性経由で動的取得。
+    `convert_tokens_to_ids` で special vocab 直接参照、literal parse は使わない。
+    """
+    inner = getattr(tok, "tokenizer", tok)  # Gemma 4 multimodal processor (Gemma4Processor) 対応
+    # Gemma 4 では eot_token = "<turn|>"、Gemma 1/2/3 では "<end_of_turn>"
+    # tokenizer 属性経由で動的取得し、特定 model 命名へのハードコードを避ける
+    eot_token = getattr(inner, "eot_token", None) or "<turn|>"
+    eot_id = inner.convert_tokens_to_ids(eot_token)
+    print(f"[sanity-eot/{label}] {eot_token!r} -> token id {eot_id}")
+    unk_id = inner.unk_token_id
+    assert eot_id is not None and eot_id >= 0 and eot_id != unk_id, (
+        f"終端 token {eot_token!r} が special vocab に未登録 (id={eot_id}, unk={unk_id})、"
+        f"PEFT #1003 該当の可能性。tokenizer / chat_template 確認要"
     )
-    return eot_ids[0]
+    # decode round-trip: id -> string で同じ token が戻るか確認
+    decoded = inner.decode([eot_id], skip_special_tokens=False)
+    print(f"[sanity-eot/{label}] decode(id={eot_id}) = {decoded!r}")
+    # chat_template が実際にこの id を出力に含めるか (format mismatch 検出)
+    sample_ids = inner.apply_chat_template(
+        [{"role": "user", "content": "test"}],
+        tokenize=True, add_generation_prompt=False,
+    )
+    if hasattr(sample_ids, "tolist"):
+        sample_ids = sample_ids.tolist()
+    if sample_ids and isinstance(sample_ids[0], list):
+        sample_ids = sample_ids[0]
+    used = eot_id in sample_ids
+    print(f"[sanity-eot/{label}] chat_template 内で使用されてる: {used}")
+    assert used, (
+        f"chat_template が token id {eot_id} を出力に含めない、format mismatch の疑い"
+    )
+    return eot_id
 
 EOT_TOKEN_ID = _check_eot_single_token(tokenizer, "pre-train")
 
@@ -332,20 +365,35 @@ trainer = SFTTrainer(
 # user turn (long system prompt) の loss を mask して、assistant turn のみで loss を取る。
 # Unsloth 公式 Gemma 4 fine-tuning ガイド推奨。chat-style SFT で事実上必須。
 #
-# 効果: assistant 末尾 `<end_of_turn>` 学習に勾配が集中、EOS 出力確率が上がる。
-# Phase 2 観測の SFT+oneshot cap 43% / SFT+bare cap 100% の改善を狙う。
+# 効果: assistant 末尾終端 token (Gemma 4: `<turn|>` id=106) 学習に勾配が集中、
+# EOS 出力確率が上がる。Phase 2 観測の SFT+oneshot cap 43% / SFT+bare cap 100% の
+# 改善を狙う (Phase 4 4/29 Colab Pro 訓練で N=3 sample で `<turn|>` emit 67% 確認)。
+#
+# **Gemma 4 token 命名注意** (memory `feedback_gemma4_token_naming.md`):
+# - start_of_turn: `<|turn>` (id=105) ← **Gemma 1/2/3 系の `<start_of_turn>` ではない**
+# - end_of_turn  : `<turn|>` (id=106) ← 同上 (`<end_of_turn>` ではない)
+#
+# instruction_part / response_part の sot literal は **`tokenizer.sot_token` 属性経由で
+# 動的取得** (Section 2.5 の `_check_eot_single_token` と一貫させる)。Gemma 5 等で
+# 命名が変わっても tokenizer 側で `sot_token` 属性が定義されていれば追従可能。
+# fallback default は Gemma 4 用 `<|turn>` (本 notebook は Gemma 4 専用想定)。
 
 # %%
 from unsloth.chat_templates import train_on_responses_only
 
+# Gemma 4: <|turn> (id=105) を tokenizer 属性経由で動的取得
+_inner_tok = getattr(tokenizer, "tokenizer", tokenizer)
+sot_token = getattr(_inner_tok, "sot_token", None) or "<|turn>"
+print(f"[setup] sot_token from tokenizer: {sot_token!r}")
+
 trainer = train_on_responses_only(
     trainer,
-    instruction_part="<start_of_turn>user\n",
-    response_part="<start_of_turn>model\n",
+    instruction_part=f"{sot_token}user\n",
+    response_part=f"{sot_token}model\n",
 )
-print("[setup] train_on_responses_only applied")
-print("        instruction_part='<start_of_turn>user\\n' (loss masked)")
-print("        response_part='<start_of_turn>model\\n' (loss computed)")
+print("[setup] train_on_responses_only applied (Gemma 4 token format)")
+print(f"        instruction_part={sot_token!r}+'user\\n' (loss masked)")
+print(f"        response_part={sot_token!r}+'model\\n' (loss computed)")
 
 # %% [markdown]
 # ## 7. Train（checkpoint resume 対応）
@@ -377,13 +425,17 @@ print(trainer_stats)
 # %% [markdown]
 # ## 7.5. Tokenizer 健全性チェック (Phase 4 #179、post-train)
 #
-# fine-tune 後に `<end_of_turn>` token が分裂していないことを確認 (PEFT #1003)。
-# 分裂検出 → 即 alarm、merged_4bit 経路 / generate 経路で EOS 検出失敗の前兆。
+# fine-tune 後に終端 token (Gemma 4: `<turn|>` id=106) が special vocab から外れたり、
+# 別 id に振り替わっていないことを確認 (PEFT #1003 + LoRA fine-tune での tokenizer drift)。
+# 分裂 / id 変化検出 → 即 alarm、merged_4bit 経路 / generate 経路で EOS 検出失敗の前兆。
+#
+# Phase 4 (4/29 Colab Pro 訓練) では Unsloth が checkpoint-N/tokenizer_config.json に
+# `added_tokens_decoder` metadata を毎 save 時に restore するため、本 check は通る想定。
 
 # %%
 EOT_POST = _check_eot_single_token(tokenizer, "post-train")
 assert EOT_POST == EOT_TOKEN_ID, (
-    f"<end_of_turn> が SFT 前後で変化 ({EOT_TOKEN_ID} → {EOT_POST})、"
+    f"終端 token id が SFT 前後で変化 ({EOT_TOKEN_ID} → {EOT_POST})、"
     f"PEFT #1003 顕在化、generate 経路で EOS 検出不能になる"
 )
 print(f"[sanity-eot/post-train] OK: token id {EOT_POST} 不変")
