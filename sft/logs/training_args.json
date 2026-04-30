@@ -1,0 +1,63 @@
+{
+  "output_dir": "/content/drive/MyDrive/vibekid-sft-ckpt",
+  "num_train_epochs": 3,
+  "per_device_train_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "effective_batch_size": 8,
+  "learning_rate": 2e-4,
+  "lr_scheduler_type": "cosine",
+  "warmup_ratio": 0.03,
+  "max_grad_norm": 0.3,
+  "weight_decay": 0.01,
+  "optim": "paged_adamw_8bit",
+  "bf16": true,
+  "fp16": false,
+  "max_seq_length": 512,
+  "dataset_text_field": "text",
+  "packing": false,
+  "eval_strategy": "steps",
+  "eval_steps": 50,
+  "save_strategy": "steps",
+  "save_steps": 100,
+  "save_total_limit": 3,
+  "logging_steps": 10,
+  "report_to": "none",
+  "seed": 42,
+  "_meta": {
+    "hardware": "Colab Pro A100 40GB",
+    "training_time_secs": 1608,
+    "training_time_human": "~26.8 min",
+    "phase": "Phase 4 (#179)",
+    "lora": {
+      "r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "note": "text decoder layers のみ、multimodal 層は学習対象外"
+    },
+    "data": {
+      "train_count": 657,
+      "eval_count": 100,
+      "synthesis_engine": "OpenRouter / gemini-2.5-flash",
+      "synthesis_prompt": "sft/meta-prompt.template.md (talk-sample dev repo)"
+    },
+    "post_train_hook": "train_on_responses_only(instruction_part='<|turn>user\\n', response_part='<|turn>model\\n') — Gemma 4 token 命名 (`<|turn>` id=105 / `<turn|>` id=106) 対応",
+    "eval_loss": {
+      "step_50": 3.0,
+      "step_100": 2.98,
+      "step_150": 3.06,
+      "step_200": 3.05,
+      "step_249": 3.05
+    },
+    "source_notebook": "sft/notebook/sft-gemma4-e2b.py (Phase 4 確定版)",
+    "source_memory": "project_external_research_findings.md Section 2 (4/26 確定 hyperparameter)"
+  }
+}

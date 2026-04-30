@@ -86,9 +86,46 @@ pipeline_tag: text-generation
 - save_steps: 100 (save_total_limit=3), eval_steps: 50, eval on full eval split each call
 - training time: 1608 s (~26.8 min) on Colab Pro A100 40GB
 
-完全な `training_args.json`:
+完全な `training_args.json` (Phase 4、Colab Pro A100 40GB、`bf16=true`、~26.8 min):
 
-<!-- TRAINING_ARGS_PLACEHOLDER -->
+```json
+{
+  "output_dir": "/content/drive/MyDrive/vibekid-sft-ckpt",
+  "num_train_epochs": 3,
+  "per_device_train_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "effective_batch_size": 8,
+  "learning_rate": 2e-4,
+  "lr_scheduler_type": "cosine",
+  "warmup_ratio": 0.03,
+  "max_grad_norm": 0.3,
+  "weight_decay": 0.01,
+  "optim": "paged_adamw_8bit",
+  "bf16": true,
+  "fp16": false,
+  "max_seq_length": 512,
+  "dataset_text_field": "text",
+  "packing": false,
+  "eval_strategy": "steps",
+  "eval_steps": 50,
+  "save_strategy": "steps",
+  "save_steps": 100,
+  "save_total_limit": 3,
+  "logging_steps": 10,
+  "report_to": "none",
+  "seed": 42
+}
+```
+
+raw JSON (LoRA / data / post-train hook 含む拡張版): [`sft/logs/training_args.json`](https://github.com/velocitylabo/vibekid/blob/main/sft/logs/training_args.json)。
+
+**Unsloth 公式推奨との deviation**: 公式 [`unsloth/docs/models/gemma-4/train`](https://unsloth.ai/docs/models/gemma-4/train) の標準 (`r=8, lora_alpha=8, num_train_epochs=1, optim=adamw_8bit, lr_scheduler=linear, warmup_steps=5`) に対し、本 SFT は **小規模 dataset (657 件) への適合を強化**するため:
+
+- LoRA rank/alpha 倍増 (r=16, α=32) で表現容量拡大
+- 3 epoch まで延長して eval_loss 6.34→3.05 (50% 削減) を確認
+- dropout=0.05 + cosine scheduler + warmup_ratio=0.03 で overfitting 抑制
+- `paged_adamw_8bit` で memory 効率化、`gradient_accumulation_steps=8` で勾配 stability
+- `train_on_responses_only` (Phase 4 #179 / Hypothesis A) を後段 hook で適用 — Gemma 4 token 命名 (`<|turn>` id=105 / `<turn|>` id=106) と整合させて user turn の loss を mask、SFT+oneshot cap 43%→14% を実現
 
 ## Gemma 4 SFT 固有の地雷（実装メモ）
 
