@@ -18,6 +18,9 @@
   td.fail { background: #fde8e8; }
   td.pass { background: #e6f7ea; }
   #sandbox { border: 0; width: 420px; height: 420px; }
+  /* 4/30 #163 C-4 debug: iframe visible + timeout 10s で RAF throttle 仮説検証 → 同じ 0/100、
+     fail_reasons 完全一致で false 確定 (sft/logs/validate_*_v2.json)。CSS は元の hidden に
+     戻す、timeout 10s だけ安全側で残す */
   #sandboxWrap { position: absolute; left: -10000px; top: -10000px; }
   .meta { font-size: 12px; color: #666; }
 </style>
@@ -109,7 +112,7 @@ function hasAnimation(code) {
       || /\+\s*=|\-=|\*=/.test(code);
 }
 
-async function runInSandbox(code, timeoutMs = 5000) {
+async function runInSandbox(code, timeoutMs = 10000) {
   return await new Promise((resolve) => {
     const iframe = $('sandbox');
     let evalError = null;

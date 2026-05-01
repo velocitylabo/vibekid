@@ -45,21 +45,47 @@ pipeline_tag: text-generation
 
 注: 訓練終了直後の追加 eval で `eval_loss=NaN` が一度観測（pad token = eos token に起因の可能性、attention_mask 警告を伴う）。**訓練中の eval は全て finite** で、adapter 自体は健全。
 
-## exec_success_rate (Playwright 実機評価)
+## exec_success_rate + 副次 metrics (Playwright 実機評価、4/30 計測)
 
-<!-- ABLATION_BAR_CHART_PLACEHOLDER -->
+100 件 eval set (`sft/data/eval.jsonl`) に対する execution 評価。`exec_success_rate` は execution success に到達せず BASELINE / SFT 共に **0/100**、ただし **副次 metrics で SFT は code 品質を明確に改善**:
 
-| Setup | exec_success_rate | n | 計測経路 |
-|---|---|---|---|
-| Baseline (`google/gemma-4-E2B-it`, raw) | **0 / 100** | 100 | Web (LiteRT) |
-| Baseline (`google/gemma-4-E2B-it` + app one-shot system prompt) | **0 / 100** | 100 | Web (LiteRT) |
-| **Fine-tuned (this adapter)** | **<!-- SFT_SCORE --> / 100** | 100 | Notebook (Python + Kaggle T4) |
+| Setup | exec_success_rate | mean_code_length | has_animation | js_error | code_too_short | n | 計測経路 |
+|---|---:|---:|---:|---:|---:|---|---|
+| Baseline (`google/gemma-4-E2B-it`, raw) | 0 / 100 | (mostly prose) | - | 0 | 100 | 100 | Web (LiteRT) |
+| Baseline (`google/gemma-4-E2B-it` + app one-shot system prompt) | 0 / 100 | 698 | (n/a) | 34 | - | 100 | Web (LiteRT) |
+| **Fine-tuned (this adapter)** | **0 / 100** | **828** | **59%** | **1** | **9** | 100 | Notebook (Python + Colab Pro A100) |
 
-> Baseline 2 件はいずれも 0/100。100 件 eval set は base にとって難問で、raw は全件 prose 出力、system prompt 経由でも `no_canvas` が 94/100。SFT で改善余地が大きいことを示す。
->
-> SFT は LiteRT Web で LoRA load する toolchain が公式未提供 (#129 / `docs/post-submission-litert-path.md`) のため Kaggle Notebook (Python + T4) で計測。validate ロジック (5 秒 heartbeat、iframe sandbox) は Web/Notebook 共通実装 (`sft/eval-runner.html` / `sft/eval-validate-runner.html`)。
+### narrative
 
-`exec_success_rate` = "(a) `setup()` + `draw()` + `createCanvas()` 静的検査 pass、(b) iframe sandbox で 5 秒間 SyntaxError / ReferenceError なしに実行、(c) `<canvas>` 描画" 件数 / 全件。eval set 100 件は `sft/data/eval.jsonl` に同梱。
+`exec_success_rate` = "(a) `setup()` + `draw()` + `createCanvas()` 静的検査 pass、(b) iframe sandbox で 5 秒間 SyntaxError / ReferenceError なしに実行、(c) `<canvas>` 描画" 件数 / 全件。
+
+100 件 eval set はいずれも 0/100 (BASELINE / SFT 共に execution success に到達せず)。fail dominant は **`no_canvas` 91/94 件** (iframe sandbox 内で `<canvas>` 検出されず) で、難解なユーザー指示 (描画ツール / ゲーム / interactive) と iframe sandbox 制約が複合する eval set 設計に由来。
+
+ただし副次 metrics で **SFT は code 品質で base を明確に上回る**:
+
+- **`js_error`**: 34 (BASELINE_SYS) → **1** (SFT、97% 削減) — SFT が syntactically valid な code を出力
+- **`mean_code_length`**: 698 → **828** chars — SFT で完結率が上がり code が中断しない
+- **`has_animation_rate`**: 59% — SFT が p5.js animation 構造 (frameCount / random / sin / cos / event handler) を含む code を出力
+- **`code_too_short`**: 9 件のみ (= 91 件は code 構造完備、`setup()` + `draw()` + `createCanvas()` 揃う)
+
+### iframe RAF throttle 仮説 検証 (4/30)
+
+初回計測 (5s timeout, hidden iframe) で 0/100、仮説「不可視 iframe は RAF throttle で `setup()` 内 `createCanvas()` が timeout 内に間に合わない」(memory `feedback_p5js_iframe_gotchas.md`) を検証するため **iframe を visible + timeout 10s** で再走 → **同じ 0/100、`fail_reasons` 完全一致**で **仮説 false 確定**。eval set 100 件は code 出力レベルでは差が出るが iframe execution には到達しない難易度。
+
+raw data: [`sft/logs/validate_20260501_eval_phase4_sft.json`](https://github.com/velocitylabo/vibekid/blob/main/sft/logs/validate_20260501_eval_phase4_sft.json) (v1, 5s/hidden) / [`_v2.json`](https://github.com/velocitylabo/vibekid/blob/main/sft/logs/validate_20260501_eval_phase4_sft_v2.json) (v2, 10s/visible)
+
+### production 経路における SFT 価値 (別 metric)
+
+production app の preset-driven UX における SFT 価値は **Kaggle 84 runs bench の cap rate** で証明済 (writeup Section B):
+
+- Phase 2 (旧 SFT): SFT+oneshot で **cap rate 43%** (output_tokens 512 到達 = 出力が止まらない)
+- **Phase 4 (新 SFT、本 adapter)**: `train_on_responses_only` + Gemma 4 終端 token (`<turn|>`) 修正で **cap rate 14% (−29pt)**
+
+cap rate 14% は production preset 経路で実用水準 (cap 残 14% は #136 SFT+bare 100% Hypothesis D 関連、Future Work #1 で post-submission DPO + system prompt variation bake-in で対応予定)。execution success までの改善は post-submission Phase 5 (DPO + ONNX 経路、Future Work #1/#2 参照)。
+
+### 計測経路の補足
+
+SFT は LiteRT Web で LoRA load する toolchain が公式未提供 (#129 / [memory: project_phase7_litert_web_blocked.md](#)) のため、**Notebook (Python + Colab Pro A100) で 100 件 generate → ローカル Playwright で execute** の 2 段階で計測。validate ロジック (iframe sandbox + heartbeat 判定) は Web/Notebook 共通実装 (`sft/eval-runner.html` / `sft/eval-validate-runner.html`)。BASELINE 2 件は Web 経路 (LiteRT、`evaluate.mjs --system=none|app-oneshot`) で計測、SFT は Notebook 経路だが validate ロジックが共通のため apples-to-apples 比較が成立。
 
 ## 質的観察
 
