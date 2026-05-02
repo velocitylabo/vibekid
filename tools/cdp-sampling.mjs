@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-// 4 presets × N runs サンプリング runner via CDP
+// CDP 経由 N runs サンプリング runner。preset 一覧は app.js
+// (`Alpine.$data(el).presets`) からランタイム取得する (#147 — 旧版は hardcoded
+// で PR #189 後に 4/7 preset しか回らない drift が発生)。
 // memory feedback_sampling_protocol.md 準拠: 各 run hard reload + 単発 click
 //
 // 実行例:
-//   node tools/cdp-sampling.mjs                    # default 5 runs/preset
+//   node tools/cdp-sampling.mjs                    # default 5 runs/preset、app.js 全 preset
 //   RUNS_PER_PRESET=1 node tools/cdp-sampling.mjs  # smoke test
+//   PRESET_TEXTS='はなびがあがる,かみふぶき,しゃぼんだまがうかぶ' \
+//     RUNS_PER_PRESET=5 node tools/cdp-sampling.mjs   # 特定 preset のみ計測
 //   CDP_HOST=172.31.80.1:9222 APP_URL=http://localhost:8000 node tools/cdp-sampling.mjs
 
 import { writeFile } from "node:fs/promises";
@@ -13,13 +17,11 @@ const CDP_HOST = process.env.CDP_HOST || "172.31.80.1:9222";
 const APP_URL = process.env.APP_URL || "http://localhost:8000";
 const RUNS_PER_PRESET = Number(process.env.RUNS_PER_PRESET || 5);
 const POST_GENERATE_WAIT_MS = 5500; // preview heartbeat ok/frozen 判定が確定するまで
-
-const PRESETS = [
-  { text: "ねこがはしる", emoji: "🐱", category: "action" },
-  { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
-  { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
-  { text: "あめがふる", emoji: "☔", category: "visual" },
-];
+// PRESET_TEXTS が set されていれば、その text に exact match する preset のみ
+// (順序保持)。未設定なら app.js の全 preset を順に回す。
+const PRESET_TEXTS = process.env.PRESET_TEXTS
+  ? process.env.PRESET_TEXTS.split(",").map((s) => s.trim()).filter(Boolean)
+  : null;
 
 let cdpId = 0;
 const pending = new Map();
@@ -114,6 +116,29 @@ async function main() {
   }
   await evalExpr(`window.__vibeDiag.clear()`);
   console.log("[cdp] init ok, diag cleared (lastSeq API available)");
+
+  // (3.5) preset 一覧を app.js (Alpine state) から取得 (#147)。hardcode をやめて
+  // app.js / runner の drift を構造的に防ぐ。PRESET_TEXTS env でフィルタ可能。
+  const allPresets = JSON.parse(
+    await evalExpr(`JSON.stringify(Alpine.$data(document.querySelector("[x-data]")).presets)`),
+  );
+  let PRESETS;
+  if (PRESET_TEXTS) {
+    const byText = new Map(allPresets.map((p) => [p.text, p]));
+    const missing = PRESET_TEXTS.filter((t) => !byText.has(t));
+    if (missing.length > 0) {
+      throw new Error(
+        `PRESET_TEXTS に app.js で見つからない preset があります: ${missing.join(", ")}\n` +
+          `available (app.js order): ${allPresets.map((p) => p.text).join(", ")}`,
+      );
+    }
+    PRESETS = PRESET_TEXTS.map((t) => byText.get(t));
+  } else {
+    PRESETS = allPresets;
+  }
+  console.log(
+    `[cdp] presets resolved (n=${PRESETS.length}): ${PRESETS.map((p) => p.text).join(", ")}`,
+  );
 
   // (4) sampling loop
   const runStart = Date.now();
