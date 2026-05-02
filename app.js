@@ -132,9 +132,8 @@ document.addEventListener("alpine:init", () => {
       { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
       { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
       { text: "あめがふる", emoji: "☔", category: "visual" },
-      { text: "はなびがあがる", emoji: "🎆", category: "action" },
-      { text: "かみふぶき", emoji: "🎊", category: "visual" },
-      { text: "しゃぼんだまがうかぶ", emoji: "🫧", category: "action" },
+      { text: "ゆきがふる", emoji: "❄", category: "visual" },
+      { text: "まるがまわる", emoji: "🔄", category: "action" },
     ],
 
     P5_CDN: "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js",
