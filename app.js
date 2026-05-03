@@ -310,6 +310,12 @@ function draw() {
 
     resetChat() {
       this.stopVoiceInput();
+      // 旧 preview の watcher を残すと iframe 消滅後 2-3s で frozen 判定が
+      // 走り、次の chip 選択中に _lastUserText が B のテキストに上書きされた
+      // 状態で 😵 「もういちど」誤表示が発生する。teardown と _lastUserText
+      // クリアで漏出を塞ぐ。
+      this._teardownHeartbeat();
+      this._lastUserText = "";
       this.history = [];
       this.messages = [];
       this.previewCode = "";
