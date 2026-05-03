@@ -656,24 +656,30 @@ ${code}
 <\/script></body></html>`;
     },
 
-    openCodePreview(code) {
+    openCodePreview(code, userText) {
       // code は p5.js スニペット、wrapP5 で iframe 用 HTML に包む
+      // userText は本 preview に紐づくユーザー入力 (frozen / runtime error 時の retryPrompt 用)。
+      // 未指定なら現在の _lastUserText を fallback (例: "もういちど うごかす" による re-run 経由)
       this._teardownHeartbeat();
       const tok = "p" + this._nextId++;
+      const watchUserText = userText !== undefined ? userText : this._lastUserText;
       this.previewCode = "";
       this.$nextTick(() => {
         this.previewCode = this.wrapP5(code, tok);
-        this._startHeartbeatWatch(tok);
+        this._startHeartbeatWatch(tok, watchUserText);
       });
     },
 
-    _startHeartbeatWatch(tok) {
+    _startHeartbeatWatch(tok, userText) {
       // 初回 heartbeat まで 3s の grace（CDN fetch + 初期化を許容）
       // 初回受信後は 2s 無音で frozen 判定 → iframe をリセットしてエラー UI へ
       // 2.5s heartbeat 継続で preview 成功とみなし diag annotate（以降 error/frozen が
       // 発生した場合はそちらで上書きされる）
+      // userText を state に焼き込むことで、preview A 表示中に新 gen B が走り
+      // _lastUserText が B に上書きされた状態で preview A の vibe-error / frozen が
+      // 発火しても「A のテキストで」error UI が出る (B のテキストでの誤 push を防ぐ)
       const startTime = Date.now();
-      const state = { gotFirst: false, lastBeat: 0, frozen: false, annotatedOk: false };
+      const state = { gotFirst: false, lastBeat: 0, frozen: false, annotatedOk: false, userText };
       // teardown 後 / 別 watcher への乗り換え後は本 watcher の handler/timer を no-op 化する。
       // 連続 preset 押下時に前 watcher の setInterval 残骸が new entry に annotate を
       // 書き込む経路を塞ぐ (#144)
@@ -687,7 +693,7 @@ ${code}
           state.lastBeat = Date.now();
         } else if (d.type === "vibe-error") {
           state.frozen = true;
-          this._onPreviewError(d.msg);
+          this._onPreviewError(d.msg, state.userText);
         }
       };
       window.addEventListener("message", handler);
@@ -701,13 +707,13 @@ ${code}
         if (!state.gotFirst) {
           if (now - startTime > 3000) {
             state.frozen = true;
-            this._onPreviewFrozen();
+            this._onPreviewFrozen(state.userText);
           }
           return;
         }
         if (now - state.lastBeat > 2000) {
           state.frozen = true;
-          this._onPreviewFrozen();
+          this._onPreviewFrozen(state.userText);
           return;
         }
         if (!state.annotatedOk && now - startTime > 2500) {
@@ -731,20 +737,20 @@ ${code}
       this._heartbeatState = null;
     },
 
-    _onPreviewFrozen() {
+    _onPreviewFrozen(userText) {
       console.warn("[vibeApp] preview frozen (heartbeat timeout)");
       this._diagAnnotateLast({ preview: { status: "frozen" } });
       this.previewCode = "";
       this._teardownHeartbeat();
-      if (this._lastUserText) this._pushErrorMessage("😵", this._lastUserText);
+      if (userText) this._pushErrorMessage("😵", userText);
     },
 
-    _onPreviewError(msg) {
+    _onPreviewError(msg, userText) {
       console.warn("[vibeApp] preview runtime error:", msg);
       this._diagAnnotateLast({ preview: { status: "error", msg: msg || null } });
       this.previewCode = "";
       this._teardownHeartbeat();
-      if (this._lastUserText) this._pushErrorMessage("🔧", this._lastUserText);
+      if (userText) this._pushErrorMessage("🔧", userText);
     },
 
     _pushErrorMessage(emoji, retryPrompt) {
@@ -947,7 +953,9 @@ ${this._p5ScriptTag}
           if (valid.ok) {
             this.messages[typingIdx].codeBlock = code;
             this.messages[typingIdx].text = explanation;
-            this.openCodePreview(code);
+            // 本 preview を開いた時の text を明示的に紐づけ。後続 gen で _lastUserText が
+            // 上書きされても、本 watcher の error / frozen は本 text で push される (Scenario A 漏出 fix)
+            this.openCodePreview(code, text);
           } else {
             console.warn("[vibeApp] コード検証失敗:", valid.msg);
             if (this._diagCurrent) this._diagCurrent.preview = { status: "skipped", reason: "validator_failed" };
