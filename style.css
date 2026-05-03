@@ -295,7 +295,8 @@ html, body {
   font-weight: bold;
 }
 
-.reset-chat:hover { background: rgba(255, 255, 255, 0.35); }
+.reset-chat:hover:not(:disabled) { background: rgba(255, 255, 255, 0.35); }
+.reset-chat:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .code-preview-panel {
   flex-shrink: 0;

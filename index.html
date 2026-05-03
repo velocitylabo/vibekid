@@ -33,7 +33,7 @@
     <header class="app-header">
       <h1 class="app-title">&#x1F680; ヴァイブコーディング</h1>
       <div class="app-status" x-text="statusText" :class="statusType"></div>
-      <button class="reset-chat" x-show="messages.length > 0" @click="resetChat()" title="新しいおしゃべり">あたらしく</button>
+      <button class="reset-chat" x-show="messages.length > 0" :disabled="isGenerating" @click="resetChat()" title="新しいおしゃべり">あたらしく</button>
       <button class="theme-toggle" @click="toggleDarkMode()" :title="darkMode ? 'ライトモード' : 'ダークモード'">
         <span x-text="darkMode ? '☀️' : '🌙'"></span>
       </button>
