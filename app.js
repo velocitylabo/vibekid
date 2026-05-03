@@ -818,6 +818,12 @@ ${this._p5ScriptTag}
       const text = (retryText || this.inputText).trim();
       if (!text || this.isGenerating || !this.modelReady) return;
 
+      // 録音中の chip click 等で speech recognition が継続したまま gen に入ると、
+      // 裏で onresult が inputText を上書き続け、また WebSpeech マイクも生き続ける。
+      // selectPreset / retryPrompt / form submit すべてが本関数を経由するので、
+      // ここで一括停止する (stopVoiceInput は録音してない時は no-op)。
+      this.stopVoiceInput();
+
       this.isGenerating = true;
       this._lastUserText = text;
 
