@@ -644,7 +644,7 @@ function draw() {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'">
 <script>${preHarness}<\/script>
 ${this._p5ScriptTag}
-<style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:auto!important;height:auto!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
+<style>html,body{margin:0;padding:0;height:100%;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center}canvas{display:block!important;width:100vmin!important;height:100vmin!important;max-width:100vw!important;max-height:100vh!important;object-fit:contain}</style>
 </head><body><script>
 ${code}
 <\/script></body></html>`;
