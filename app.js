@@ -128,11 +128,11 @@ document.addEventListener("alpine:init", () => {
     _diagCurrent: null,
 
     presets: [
-      { text: "ねこがはしる", emoji: "🐱", category: "action" },
       { text: "ぼーるがはねる", emoji: "🏀", category: "action" },
-      { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
-      { text: "あめがふる", emoji: "☔", category: "visual" },
       { text: "まるがまわる", emoji: "🔄", category: "action" },
+      { text: "あめがふる", emoji: "☔", category: "visual" },
+      { text: "ねこがはしる", emoji: "🐱", category: "action" },
+      { text: "ボタンおすといろがかわる", emoji: "🔘", category: "interactive" },
     ],
 
     P5_CDN: "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js",
