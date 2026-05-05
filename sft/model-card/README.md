@@ -22,7 +22,8 @@ pipeline_tag: text-generation
 
 ## Highlights
 
-- **Base model**: `google/gemma-4-E2B-it`
+- **Base model (concept)**: `google/gemma-4-E2B-it`
+- **Base model (loaded at training)**: `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit` @ revision `a285b07ef4` (2026-04-07、`adapter_config.json` 参照、Phase 4 訓練 2026-04-29 時点の latest)
 - **Adapter type**: QLoRA r=16 α=32（text decoder layers のみ、multimodal 層は学習対象外）
 - **Train data**: 657 件（4/19 split、OpenRouter Gemini 2.5 Flash 合成）
 - **Eval data**: 100 件（カテゴリ均等、4/19 cutoff）
@@ -188,6 +189,16 @@ text-only データを Gemma 4 default collator に通すと `mm_token_type_ids`
 - **Eval script**: [`sft/scripts/evaluate.mjs`](https://github.com/velocitylabo/vibekid/blob/main/sft/scripts/evaluate.mjs)（Playwright で生成コードを実行、5 秒 heartbeat 判定）
 - **Synthesis pipeline**: [`sft/scripts/build-prompt.mjs`](https://github.com/velocitylabo/vibekid/blob/main/sft/scripts/build-prompt.mjs)（OpenRouter 経由で Gemini 2.5 Flash を呼ぶ slot-filling meta-prompt）
 
+### Pinned dependencies (Phase 4 訓練時、2026-04-29)
+
+| component | pin | 備考 |
+|---|---|---|
+| Base model (4-bit) | `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit @ a285b07ef4` | 2026-04-07 latest、訓練時の `adapter_config.json` `base_model_name_or_path` |
+| Base model (concept reference) | `unsloth/gemma-4-E2B-it @ f0c5915f17` | 2026-04-11 latest、Google upstream の Unsloth ミラー |
+| Unsloth | 2026.4.x 系 (`!pip install --upgrade` で訓練当日 latest 取得、April 8 Gemma 4 universal-bug fix を含む post-fix リリース) | 2026-04-29 訓練時の installed version は logs に未保存。再訓練時は `unsloth==2026.4.x` 明示 pin 推奨 |
+| transformers | `5.5.0` 系 | 訓練 notebook で `--no-deps` install、Unsloth 依存解決に従属 |
+| Hardware | Colab Pro A100 40GB | bf16 native、3 epochs ≈ 27min |
+
 ### Training data 設計
 
 - 6 seed ジャンル（動物 / 物理 / interactive / 視覚エフェクト / カウンター / お絵描き）から slot-filling meta-prompt で 800 件量産、validate-html で 757 件残存
@@ -201,17 +212,39 @@ text-only データを Gemma 4 default collator に通すと `mm_token_type_ids`
 
 ### 1. Adapter のロード
 
+訓練時の base SHA を **明示 pin** することで再現性を担保 (`unsloth/gemma-4-e2b-it-unsloth-bnb-4bit` は 2026-05 で頻繁に re-upload されているため、unpinned だと挙動が変わり得る):
+
 ```python
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-base_id = "google/gemma-4-E2B-it"
-adapter_id = "<repo-id-of-this-card>"  # 例: user/vibekid-gemma-4-E2B-lora
+# Phase 4 訓練時 (2026-04-29) の base 4-bit variant SHA
+base_id = "unsloth/gemma-4-e2b-it-unsloth-bnb-4bit"
+base_revision = "a285b07ef4"  # 2026-04-07、Phase 4 訓練時の latest
+adapter_id = "velocitylabo/vibekid-gemma-4-E2B-lora-phase4"
 
-tokenizer = AutoTokenizer.from_pretrained(base_id)
-base = AutoModelForCausalLM.from_pretrained(base_id, torch_dtype="auto", device_map="auto")
+tokenizer = AutoTokenizer.from_pretrained(base_id, revision=base_revision)
+base = AutoModelForCausalLM.from_pretrained(
+    base_id, revision=base_revision, torch_dtype="auto", device_map="auto"
+)
 model = PeftModel.from_pretrained(base, adapter_id)
 model.eval()
+```
+
+または Unsloth `FastModel` (推奨、訓練と inference が同経路):
+
+```python
+from unsloth import FastModel
+
+# revision pin は FastModel `revision=` 引数経由 (Unsloth ≥ 2026.4)
+model, tokenizer = FastModel.from_pretrained(
+    model_name="velocitylabo/vibekid-gemma-4-E2B-lora-phase4",
+    max_seq_length=2048,
+    load_in_4bit=True,
+    load_in_8bit=False,
+    full_finetuning=False,
+    dtype=None,
+)
 ```
 
 ### 2. Inference 例
