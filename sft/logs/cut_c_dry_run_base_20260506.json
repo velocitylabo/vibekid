@@ -1,0 +1,27 @@
+{
+  "ts": "2026-05-05T20:24:23",
+  "model": "unsloth/gemma-4-E2B-it (base, no LoRA)",
+  "system_prompt": "app-oneshot (eval-runner.html SYSTEM_PROMPTS['app-oneshot'])",
+  "max_new_tokens": 1024,
+  "do_sample": false,
+  "n": 2,
+  "mean_gen_secs": 53.488497614860535,
+  "results": [
+    {
+      "idx": 0,
+      "prompt": "ねこがはしる",
+      "category": "animal",
+      "difficulty": "medium",
+      "raw_text": "```js\nlet catX = 50;\nlet catY = 150;\nlet catSpeed = 3;\n\nfunction setup() {\n  createCanvas(400, 400);\n}\n\nfunction draw() {\n  background(255, 255, 255);\n  \n  // ねこを右に動かす\n  catX = catX + catSpeed;\n  \n  // 画面の端に達したら左端に戻す\n  if (catX > 350) {\n    catX = 50;\n  }\n  \n  fill(0, 0, 0); // 黒色\n  noStroke();\n  ellipse(catX, catY, 30, 40); // ねこを円で表現\n}\n```",
+      "gen_secs": 74.27233481407166
+    },
+    {
+      "idx": 1,
+      "prompt": "ボタンおすといろがかわる",
+      "category": "interaction",
+      "difficulty": "medium",
+      "raw_text": "```js\nlet buttonX = 100;\nlet buttonY = 100;\nlet buttonColor = color(255, 0, 0);\nlet isRed = true;\n\nfunction setup() {\n  createCanvas(400, 400);\n}\n\nfunction draw() {\n  background(255);\n\n  // ボタンの描画\n  fill(buttonColor);\n  rect(buttonX, buttonY, 100, 100);\n\n  // ボタンの色を切り替えるためのロジック（ここではマウスのクリックで切り替える例として実装）\n  if (mouseIsPressed) {\n    isRed = !isRed;\n    if (isRed) {\n      buttonColor = color(255, 0, 0); // 赤\n    } else {\n      buttonColor = color(0, 0, 255); // 青\n    }\n  }\n}\n```",
+      "gen_secs": 32.704660415649414
+    }
+  ]
+}

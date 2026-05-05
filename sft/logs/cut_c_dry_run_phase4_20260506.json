@@ -1,0 +1,27 @@
+{
+  "ts": "2026-05-05T01:14:16",
+  "model": "velocitylabo/vibekid-gemma-4-E2B-lora-phase4",
+  "system_prompt": "app-oneshot (eval-runner.html SYSTEM_PROMPTS['app-oneshot'])",
+  "max_new_tokens": 1024,
+  "do_sample": false,
+  "n": 2,
+  "mean_gen_secs": 84.03964006900787,
+  "results": [
+    {
+      "idx": 0,
+      "prompt": "ねこがはしる",
+      "category": "animal",
+      "difficulty": "medium",
+      "raw_text": "```js\nlet catX = 100;\nlet catY = 100;\nlet catVY = 0;\nlet catSpeed = 5;\nlet groundY = 370;\nlet isJumping = false;\n\nfunction setup() {\n  createCanvas(400, 400);\n}\n\nfunction draw() {\n  background(240);\n\n  // ねこの描画\n  fill(255, 100, 100); // ピンクっぽい色\n  noStroke();\n  ellipse(catX, catY, 30, 40); // 体\n  ellipse(catX + 10, catY - 10, 15, 20); // 耳\n  rect(catX - 10, catY + 10, 20, 20); // お腹\n\n  // 足の描画\n  fill(255);\n  rect(catX - 5, catY + 20, 10, 10); // 左足\n  rect(catX + 10, catY + 20, 10, 10); // 右足\n\n  // 地面\n  fill(150);\n  rect(0, groundY, 400, 0);\n\n  // 重力\n  catVY = catVY + 0.5;\n\n  // 地面に落ちたら止める\n  if (catY > groundY) {\n    catY = groundY;\n    catVY = -catSpeed;\n    isJumping = false;\n  }\n\n  // 落下アニメーション\n  catY = catY + catVY;\n}\n```",
+      "gen_secs": 111.20026874542236
+    },
+    {
+      "idx": 1,
+      "prompt": "ボタンおすといろがかわる",
+      "category": "interaction",
+      "difficulty": "medium",
+      "raw_text": "```js\nlet buttonX = 100;\nlet buttonY = 50;\nlet myButtonWidth = 150;\nlet myButtonHeight = 50;\nlet myButtonColor = color(0, 0, 255); // 初期色は青\n\nfunction setup() {\n  createCanvas(400, 400);\n  textAlign(CENTER, CENTER);\n  textSize(16);\n}\n\nfunction draw() {\n  background(240);\n\n  // ボタンを描画\n  fill(myButtonColor);\n  rect(buttonX, buttonY, myButtonWidth, myButtonHeight);\n  fill(255); // 文字色を白にリセット\n  text(\"色を変える\", buttonX + myButtonWidth / 2, buttonY + myButtonHeight / 2);\n\n  // ボタンの色を切り替える処理\n  if (myButtonColor === color(255, 100, 100)) {\n    myButtonColor = color(0, 100, 0); // 赤に\n  } else if (myButtonColor === color(0, 100, 0)) {\n    myButtonColor = color(100, 0, 0); // 茶色に\n  } else {\n    myButtonColor = color(0, 0, 255); // 青に戻す\n  }\n}\n```",
+      "gen_secs": 56.879011392593384
+    }
+  ]
+}
