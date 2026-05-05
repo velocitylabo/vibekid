@@ -44,7 +44,7 @@
 #
 # - Kaggle T4 GPU x1（無料 30h/week）。x2 構成でも 1 GPU しか使わない
 # - Base model: `unsloth/gemma-4-E2B-it`（4-bit quant 済、gated 承認は `google/gemma-4-E2B-it` 側）
-# - LoRA adapter: `velocitylabo/vibekid-gemma-4-E2B-lora`（HF Hub public）
+# - LoRA adapter: `velocitylabo/vibekid-gemma-4-E2B-lora-phase4`（HF Hub public、Phase 4 production、cap 14%）
 # - Stack: Unsloth FastModel + transformers + bitsandbytes
 # - 全体実行時間目標: 15-25 分
 #
@@ -93,11 +93,45 @@ except ImportError:
     print("[auth] kaggle_secrets 不在 — ローカル実行とみなす。`huggingface-cli login` 済みなら OK")
 
 # %% [markdown]
+# ## 2.5. transformers `_init_weights` monkey-patch (2026-05-06 追加)
+#
+# transformers 5.5.0 + Gemma 4 multimodal 4-bit の組合せで `_initialize_missing_keys`
+# 経由で Vision Conv2d の Byte tensor に `init.normal_` が呼ばれて落ちる
+# (NotImplementedError: normal_kernel_cuda not implemented for 'Byte')。
+#
+# Gemma 4 の language_model.layers 15-34 は tied weights で MISSING 表示されるが、
+# 実体は base から load 済み + LoRA delta が後段で適用されるので init 不要。
+# Vision Conv2d も load 済みなので init 不要。よって全 quantized (non-float dtype)
+# tensor の init を skip する patch で OK。
+#
+# 4/29 Phase 2/4 完走時には未顕在化、5/5 dry run で発見。Kaggle / Colab 両環境で再現。
+
+# %%
+import torch
+from transformers.models.gemma4 import modeling_gemma4
+
+_orig_init = modeling_gemma4.Gemma4PreTrainedModel._init_weights
+
+_FLOAT_DTYPES = {torch.float16, torch.float32, torch.float64, torch.bfloat16}
+
+
+def _patched_init(self, module):
+    # quantized (Byte/uint8 等) の重みは init skip
+    w = getattr(module, "weight", None)
+    if w is not None and w.dtype not in _FLOAT_DTYPES:
+        return
+    _orig_init(self, module)
+
+
+modeling_gemma4.Gemma4PreTrainedModel._init_weights = _patched_init
+print("[patch] Gemma4 _init_weights monkey-patched (skip non-float tensors)")
+
+# %% [markdown]
 # ## 3. モデルロード
 #
 # Unsloth `FastModel.from_pretrained` で 1 関数呼び出し:
 # - `model_name="unsloth/gemma-4-E2B-it"` → base only
-# - `model_name="velocitylabo/vibekid-gemma-4-E2B-lora"` → base + SFT adapter
+# - `model_name="velocitylabo/vibekid-gemma-4-E2B-lora-phase4"` → base + SFT adapter (Phase 4 production、cap 14%)
 #   (adapter repo の `adapter_config.json` の `base_model_name_or_path` を Unsloth が読んで
 #    base を内部で別途ロードしてくれる)
 #
@@ -108,7 +142,7 @@ except ImportError:
 from unsloth import FastModel
 
 BASE_MODEL_ID = "unsloth/gemma-4-E2B-it"
-LORA_REPO_ID = "velocitylabo/vibekid-gemma-4-E2B-lora"
+LORA_REPO_ID = "velocitylabo/vibekid-gemma-4-E2B-lora-phase4"  # Phase 4 (cap 14%、4/29 訓練、production)
 MAX_SEQ_LENGTH = 2048
 
 
@@ -525,7 +559,7 @@ df_compare
 # - **Hardware**: Kaggle T4 x1（無料枠で十分、Gemma 4 E2B 4-bit ~3GB）
 # - **Software**: Unsloth + transformers + peft + bitsandbytes（Section 1 でインストール）
 # - **Base model**: `unsloth/gemma-4-E2B-it`（4-bit 量子化済、gated 承認は `google/gemma-4-E2B-it` 側）
-# - **LoRA adapter**: `velocitylabo/vibekid-gemma-4-E2B-lora`（HF Hub public、QLoRA r=16 α=32、3 epoch、eval_loss 6.34→3.05）
+# - **LoRA adapter**: `velocitylabo/vibekid-gemma-4-E2B-lora-phase4`（HF Hub public、Phase 4 / QLoRA r=16 α=32、3 epoch、eval_loss 6.34→3.05、cap 14%）
 # - **数値の解釈**: Python + T4 + 4-bit quant の値。Web 版（LiteRT + WebGPU + Windows）
 #   とは直接比較不可、`#127` を参照
 # - **再現コマンド**: Kaggle で本 notebook を fork → "Run All"
