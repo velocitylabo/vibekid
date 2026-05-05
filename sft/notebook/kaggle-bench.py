@@ -142,8 +142,17 @@ print("[patch] Gemma4 _init_weights monkey-patched (skip non-float tensors)")
 from unsloth import FastModel
 
 BASE_MODEL_ID = "unsloth/gemma-4-E2B-it"
+BASE_REVISION = "f0c5915f17"  # 2026-04-11、Phase 4 訓練 (4/29) 時の latest。5/4-5 に re-upload あり、
+                              # base+bare の決定論性を保つために pin (Routine 2026-05-05 ALERT 2 反映)
 LORA_REPO_ID = "velocitylabo/vibekid-gemma-4-E2B-lora-phase4"  # Phase 4 (cap 14%、4/29 訓練、production)
 MAX_SEQ_LENGTH = 2048
+
+# Note (2026-05-06): LoRA path (use_lora=True) は adapter_config.json の base_model_name_or_path
+# (`unsloth/gemma-4-e2b-it-unsloth-bnb-4bit`) を Unsloth が読んで base を自動 load するが、現状
+# adapter_config に revision フィールドが空のため base SHA は loading 時の latest になる。
+# 5/6 verify run で per-prompt cap 分布が redistribute する観測あり (writeup Section B-5 注記)。
+# 完全な LoRA path 決定論化には HF Hub 上の adapter_config.json に revision を埋める必要あり、
+# 5/16-17 Public 化前 or post-submission Future Work で対応。
 
 
 def load_model(use_lora: bool):
@@ -152,10 +161,13 @@ def load_model(use_lora: bool):
     - base 単独で n=72 runs 計測 → unload → SFT 版で n=72 runs、の 2 phase 想定
     - 4-bit 量子化、T4 native 非対応の bf16 は dtype=None で auto 判定 (Unsloth が float16 fallback)
     - `tokenizer.chat_template` が None の場合あり (transformers issue #45205)、Unsloth が吸収
+    - base path は BASE_REVISION で pin、LoRA path は adapter_config 主導 (上記 Note 参照)
     """
     model_name = LORA_REPO_ID if use_lora else BASE_MODEL_ID
+    revision = None if use_lora else BASE_REVISION
     model, tokenizer = FastModel.from_pretrained(
         model_name=model_name,
+        revision=revision,
         max_seq_length=MAX_SEQ_LENGTH,
         load_in_4bit=True,
         load_in_8bit=False,
@@ -163,7 +175,8 @@ def load_model(use_lora: bool):
         dtype=None,
     )
     model.eval()
-    print(f"[model] loaded {model_name} (use_lora={use_lora})")
+    rev_label = f"@{revision}" if revision else "(no rev pin)"
+    print(f"[model] loaded {model_name}{rev_label} (use_lora={use_lora})")
     return model, tokenizer
 
 # %% [markdown]

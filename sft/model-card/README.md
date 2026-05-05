@@ -196,8 +196,19 @@ text-only データを Gemma 4 default collator に通すと `mm_token_type_ids`
 | Base model (4-bit) | `unsloth/gemma-4-e2b-it-unsloth-bnb-4bit @ a285b07ef4` | 2026-04-07 latest、訓練時の `adapter_config.json` `base_model_name_or_path` |
 | Base model (concept reference) | `unsloth/gemma-4-E2B-it @ f0c5915f17` | 2026-04-11 latest、Google upstream の Unsloth ミラー |
 | Unsloth | 2026.4.x 系 (`!pip install --upgrade` で訓練当日 latest 取得、April 8 Gemma 4 universal-bug fix を含む post-fix リリース) | 2026-04-29 訓練時の installed version は logs に未保存。再訓練時は `unsloth==2026.4.x` 明示 pin 推奨 |
-| transformers | `5.5.0` 系 | 訓練 notebook で `--no-deps` install、Unsloth 依存解決に従属 |
+| transformers | `5.5.0` 系 | 訓練 notebook で `--no-deps` install、Unsloth 依存解決に従属。Kaggle/Colab 5/5+ 環境で `_init_weights` Byte tensor bug あり、kaggle-bench notebook に monkey-patch を埋め込み済 |
 | Hardware | Colab Pro A100 40GB | bf16 native、3 epochs ≈ 27min |
+
+### Verify run note (2026-05-06)
+
+5/6 に kaggle-bench を Run All で再実行 (`bench_runs_phase4_verify_20260506.csv`):
+
+- ✅ **Aggregate cap rate `SFT+oneshot 14.3%` は完全一致** (4/29 baseline と Δ=0)、production narrative は再現性あり
+- ⚠️ **per-prompt cap 分布は redistribute** (4/29: `length/short` 67% + `preset/neko` 33% / 5/6: `length/long` 67% + `length/normal` 33%、aggregate は同じ)
+- 原因: base model `unsloth/gemma-4-E2B-it` が 5/4-5 に re-upload された (Unsloth HF org 通常更新) ため、unpinned base で挙動が微妙にシフト
+- **完全 deterministic 再現**には kaggle-bench `BASE_REVISION = "f0c5915f17"` を使用 (現 source は base path のみ pin、LoRA path は adapter_config 経路で base SHA 未 pin、Future Work)
+
+判官が re-run する場合、aggregate 数値は再現する想定。per-prompt 内訳は base model の HF Hub 状態で揺らぐ可能性あり。
 
 ### Training data 設計
 

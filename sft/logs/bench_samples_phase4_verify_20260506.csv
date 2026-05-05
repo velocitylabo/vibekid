@@ -1,0 +1,339 @@
+prompt_key,output_tokens,output_chars,total_ms,fail,output_text,quality
+neko,300,636,50296.5,False,"```js
+let catX = 100;
+let catY = 100;
+let catVY = 0;
+let catSpeed = 3;
+let catColor = '#444444';
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+
+  // ネコの動きを計算
+  catVY = catVY + catSpeed;
+  catY = catY + catVY;
+
+  // ネコの描画
+  fill(catColor);
+  noStroke();
+  ellipse(catX, catY, 30, 40);
+
+  // ネコの足の描画
+  fill(255);
+  rect(catX - 5, catY + 35, 10, 10);
+}
+
+function mousePressed() {
+  // マウスをクリックしたらネコを動かす（例：マウスの方向に動かす）
+  let dx = mouseX - catX;
+  let dy = mouseY - catY;
+  let mag = sqrt(dx * dx + dy * dy);
+
+  if (mag > 0) {
+    catX += dx / mag * catSpeed;
+    catY += dy / mag * catSpeed;
+  }
+}
+```",good
+ball,208,445,34428.2,False,"```js
+let ballX = 200;
+let ballY = 100;
+let ballVY = 0;
+let ballRadius = 50;
+let ballColor = color(255, 100, 100);
+let cols = ['#ff4444', '#ffaa00', '#ffee00'];
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+  ballVY = ballVY + 0.5;
+  ballY = ballY + ballVY;
+  if (ballY > 370) {
+    ballY = 370;
+    ballVY = -10;
+  }
+  fill(ballColor);
+  noStroke();
+  ellipse(ballX, ballY, ballRadius, ballRadius);
+}
+```",good
+button,273,721,45621.4,False,"```js
+let buttonX = 100;
+let buttonY = 50;
+let buttonW = 150;
+let buttonH = 50;
+let myButtonColor = '#4CAF50'; // Green
+
+function setup() {
+  createCanvas(400, 400);
+  textAlign(CENTER, CENTER);
+}
+
+function draw() {
+  background(240);
+  fill(myButtonColor);
+  rect(buttonX, buttonY, buttonW, buttonH);
+  fill(255);
+  textSize(16);
+  text('Color', buttonX + buttonW / 2, buttonY + buttonH / 2);
+}
+
+function mousePressed() {
+  // マウスがボタン内にあるかチェック
+  if (mouseX >= buttonX && mouseX <= buttonX + buttonW && mouseY >= buttonY && mouseY <= buttonY + buttonH) {
+    // ボタンの色をランダムに変更
+    myButtonColor = color(random(200), random(200), random(200));
+    myButtonColor = myButtonColor.toString(); // color() の結果を文字列として保持
+  }
+}
+```",good
+ame,301,730,49587.5,False,"```js
+let rainY = 0;
+let rainSpeed = 2;
+let raindropVY = 0;
+let colors = ['#00aaff', '#44ff44', '#ffaa00'];
+let drops = [];
+
+function setup() {
+  createCanvas(400, 400);
+}
+
+function draw() {
+  background(240);
+
+  // 雨を降らせる
+  rainY = rainY + rainSpeed;
+  if (rainY > height) {
+    drops.pop();
+    rainY = 0;
+  }
+  for (let i = 0; i < drops.length; i++) {
+    let drop = drops[i];
+    fill(drop.color);
+    ellipse(drop.x, drop.y, drop.size, drop.size);
+    drop.y = drop.y + drop.vy;
+    if (drop.y > height) {
+      drops.splice(i, 1);
+      i--;
+      continue;
+    }
+  }
+}
+
+function mousePressed() {
+  drops.push({
+    x: mouseX,
+    y: mouseY,
+    vy: random(-5, 5),
+    color: colors[floor(random(colors.length))]
+  });
+}
+```",good
+neko,512,1036,62556.3,True,"はい、p5.js で猫が走るアニメーションを作成するスケッチコードを提案します。
+
+この例では、シンプルな図形（例えば円や四角）を猫に見立てて、**左右に移動する**アニメーションを作成します。
+
+### p5.js スケッチコード
+
+以下のコードを p5.js のエディタに貼り付けて実行してください。
+
+```javascript
+let catX; // 猫の現在のX座標
+let speed = 5; // 移動速度
+let catSize = 50; // 猫のサイズ
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(600, 400);
+  // 初期位置を設定
+  catX = width / 2;
+}
+
+function draw() {
+  // 1. 背景をクリアする (毎回描画し直すことで動きが出ます)
+  background(220, 240, 255); // 薄い青空のような背景
+
+  // 2. 猫を描画する
+  drawCat();
+
+  // 3. 猫を移動させる
+  moveCat();
+}
+
+function drawCat() {
+  // 猫（ここでは青い円）を描画
+  fill(0, 100, 255); // 青色
+  noStroke();
+  ellipse(catX, height / 2, catSize, catSize * 1.5); // 少し縦長な形に
+  
+  // 猫の顔や耳などの特徴を描画したい場合は、ここに別の図形を追加します
+  fill(255, 255, 0); // 黄色（目）
+  ellipse(catX - catSize / 3, height / 2 - catSize / 4, catSize / 4, catSize / 4); // 左目
+  ellipse(catX + catSize / 3, height / 2 - catSize / 4, catSize / 4, catSize / 4); // 右目
+}
+
+function moveCat() {
+  // 猫のX座標を速度分だけ変更する
+  catX = catX + speed;
+
+  // 画面の端を超えたら、反対側に戻す（ループさせる）
+  if (catX > width + catSize * 2 || catX < ",bad
+ball,512,1028,62742.1,True,"はい、p5.js でボールが跳ねる（物理的な動きをする）スケッチの基本的な例をいくつかご紹介します。
+
+最もシンプルな「ボールが画面内で上下に跳ねる」例から、少し動きをリッチにした例まで用意しました。
+
+### 1. 最もシンプルなボールの跳ね（基本的な運動）
+
+この例では、ボールの位置と速度を管理し、画面の端に当たったときに速度を反転させて跳ねるようにします。
+
+```javascript
+let ballX, ballY; // ボールの位置
+let ballSize = 20; // ボールのサイズ
+let ballVelocityX = 3; // X方向の速度
+let ballVelocityY = 5; // Y方向の速度
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(600, 400);
+  // 初期位置を設定
+  ballX = width / 2;
+  ballY = height / 2;
+}
+
+function draw() {
+  background(220, 240, 255); // 薄い青の背景
+
+  // 1. ボールの描画
+  fill(255, 0, 0); // 赤色
+  ellipse(ballX, ballY, ballSize, ballSize);
+
+  // 2. ボールの移動
+  ballX += ballVelocityX;
+  ballY += ballVelocityY;
+
+  // 3. 画面の端での跳ね判定（Y軸）
+  if (ballY + ballSize > height || ballY - ballSize < 0) {
+    // 画面の上下の端に当たったら、Y方向の速度を反転させる
+    ballVelocityY *= -1;
+  }
+
+  // 4. 画面の端での跳ね判定（X軸）
+  if (ballX + ballSize > width || ballX - ballSize < 0) {
+    // 画面の左右の端に当たったら、X方向の速度を反転させる
+    ballVelocityX *= -1;
+  }
+}
+```
+
+### 2. 重力と跳ね返りを加えたボール（よりリアルな動き）
+
+この例では、常に下に加速する「重力」を導入し、跳ね返りをより自然に表現します。
+
+",bad
+button,512,1123,63247.6,True,"はい、承知いたしました。p5.js を使って、ボタンを押すと背景の色が変化するスケッチを作成します。
+
+この例では、キャンバス上にボタン（例えば、特定の座標にある四角形）を配置し、そのボタンをクリック（またはタッチ）すると背景の色がランダムに変わるようにします。
+
+### p5.js スケッチコード
+
+以下のコードを p5.js のエディタ（例：p5.js Web Editor）に貼り付けて実行してください。
+
+```javascript
+let backgroundColor = 0; // 初期背景色 (RGB値)
+let currentColor = 255;   // 現在の背景色を管理する変数
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(600, 400);
+  // 初期背景色を設定
+  background(backgroundColor);
+}
+
+function draw() {
+  // 背景を常に現在の色で塗りつぶす
+  background(currentColor);
+
+  // 画面上にボタン（クリック領域）を描画
+  drawButton();
+}
+
+function drawButton() {
+  // ボタンの描画 (中央付近に大きな四角形)
+  fill(255, 0, 0); // ボタンの色を赤に設定
+  noStroke();
+  rect(150, 150, 300, 100); // x, y, 幅, 高さ
+
+  // ボタンの上にテキストを表示
+  fill(255);
+  textSize(18);
+  textAlign(CENTER, CENTER);
+  text(""色を変える！"", 300, 200);
+}
+
+// マウスがクリックされたときの処理
+function mousePressed() {
+  // クリックされた場所がボタンの範囲内にあるかチェック
+  if (mouseX > 150 && mouseX < 450 && mouseY > 150 && mouseY < 250) {
+    // ボタンがクリックされたら、新しいランダムな色を決定する
+    // R, G, B の値を 0 から 255 の間でランダムに生成
+    let r = random(256);
+    let g = random(256);
+    let b = random(256);
+
+    // 新しい色をcurrentColorに設定
+    currentColor = [",bad
+ame,512,1085,63920.1,True,"はい、承知いたしました。p5.js を使って「雨が降っている」様子を表現するスケッチコードを書いてみます。
+
+ここでは、背景に雨粒をランダムに描画し、雨が降っているような雰囲気を出すシンプルな例を作成します。
+
+### p5.js スケッチコード
+
+このコードを p5.js エディタ（オンラインまたはローカル）に貼り付けて実行してください。
+
+```javascript
+let rainX; // 雨粒のX座標を管理するための変数
+let raindrops = []; // 雨粒のオブジェクトを格納する配列
+
+function setup() {
+  // キャンバスのサイズを設定
+  createCanvas(800, 600);
+  // 初期設定：雨粒の初期位置をリセット
+  rainX = width;
+  for (let i = 0; i < 100; i++) {
+    // 初期位置をランダムに設定
+    raindrops.push({
+      x: random(width),
+      y: random(height),
+      speed: random(2, 5), // 降る速さをランダムに設定
+      size: random(1, 3)  // 雨粒のサイズをランダムに設定
+    });
+  }
+}
+
+function draw() {
+  // 1. 背景を少しずつ変えて雨の動きを表現 (薄い青やグレー)
+  background(135, 140, 150, 50); // 薄い青っぽい背景で、前のフレームが残るようにする
+
+  // 2. 雨粒を描画
+  for (let i = 0; i < raindrops.length; i++) {
+    let drop = raindrops[i];
+
+    // 雨粒を下に移動
+    drop.y += drop.speed;
+
+    // 画面の下端を超えたら、新しい位置のランダムな上部にリセット
+    if (drop.y > height) {
+      drop.y = random(0, height / 2); // 画面の上半分から再スタート
+      drop.x = random(width); // X座標も再ランダム化
+      drop.speed = random(2, 5); // 速度もリセット
+    }
+
+    // 雨粒を描画 (白い点や小さな線)
+    fill(2",bad
