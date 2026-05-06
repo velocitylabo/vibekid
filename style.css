@@ -305,8 +305,8 @@ html, body {
   background: #fff;
   border-bottom: 2px solid var(--border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  max-height: 60vh;
-  min-height: 320px;
+  max-height: 72vh;
+  min-height: 500px;
 }
 
 .code-preview-panel-header {
