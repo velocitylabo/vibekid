@@ -82,11 +82,11 @@ production app の preset-driven UX における SFT 価値は **Kaggle 84 runs 
 - Phase 2 (旧 SFT): SFT+oneshot で **cap rate 43%** (output_tokens 512 到達 = 出力が止まらない)
 - **Phase 4 (新 SFT、本 adapter)**: `train_on_responses_only` + Gemma 4 終端 token (`<turn|>`) 修正で **cap rate 14% (−29pt)**
 
-cap rate 14% は production preset 経路で実用水準 (cap 残 14% は #136 SFT+bare 100% Hypothesis D 関連、Future Work #1 で post-submission DPO + system prompt variation bake-in で対応予定)。execution success までの改善は post-submission Phase 5 (DPO + ONNX 経路、Future Work #1/#2 参照)。
+cap rate 14% は production preset 経路で実用水準 (cap 残 14% は SFT+bare 100% Hypothesis D 関連、Future Work #1 で DPO + system prompt variation bake-in による対応を検討)。execution success までの改善経路は writeup の Future Work #1 / #2 (DPO + `transformers.js` + ONNX) を参照。
 
 ### 計測経路の補足
 
-SFT は LiteRT Web で LoRA load する toolchain が公式未提供 (#129 / [memory: project_phase7_litert_web_blocked.md](#)) のため、**Notebook (Python + Colab Pro A100) で 100 件 generate → ローカル Playwright で execute** の 2 段階で計測。validate ロジック (iframe sandbox + heartbeat 判定) は Web/Notebook 共通実装 (`sft/eval-runner.html` / `sft/eval-validate-runner.html`)。BASELINE 2 件は Web 経路 (LiteRT、`evaluate.mjs --system=none|app-oneshot`) で計測、SFT は Notebook 経路だが validate ロジックが共通のため apples-to-apples 比較が成立。
+SFT は LiteRT-LM web で LoRA load する toolchain が公式未提供 ([LiteRT-LM overview](https://ai.google.dev/edge/litert-lm/overview)) のため、**Notebook (Python + Colab Pro A100) で 100 件 generate → ローカル Playwright で execute** の 2 段階で計測。validate ロジック (iframe sandbox + heartbeat 判定) は Web/Notebook 共通実装 (`sft/eval-runner.html` / `sft/eval-validate-runner.html`)。BASELINE 2 件は Web 経路 (LiteRT、`evaluate.mjs --system=none|app-oneshot`) で計測、SFT は Notebook 経路だが validate ロジックが共通のため apples-to-apples 比較が成立。
 
 ## 質的観察
 
@@ -152,7 +152,7 @@ raw JSON (LoRA / data / post-train hook 含む拡張版): [`sft/logs/training_ar
 - 3 epoch まで延長して eval_loss 6.34→3.05 (50% 削減) を確認
 - dropout=0.05 + cosine scheduler + warmup_ratio=0.03 で overfitting 抑制
 - `paged_adamw_8bit` で memory 効率化、`gradient_accumulation_steps=8` で勾配 stability
-- `train_on_responses_only` (Phase 4 #179 / Hypothesis A) を後段 hook で適用 — Gemma 4 token 命名 (`<|turn>` id=105 / `<turn|>` id=106) と整合させて user turn の loss を mask、SFT+oneshot cap 43%→14% を実現
+- `train_on_responses_only` (Phase 4 / Hypothesis A) を後段 hook で適用 — Gemma 4 token 命名 (`<|turn>` id=105 / `<turn|>` id=106) と整合させて user turn の loss を mask、SFT+oneshot cap 43%→14% を実現
 
 ## Gemma 4 SFT 固有の地雷（実装メモ）
 
@@ -274,7 +274,7 @@ print(tokenizer.decode(out[0], skip_special_tokens=True))
 
 本 adapter を `@mediapipe/tasks-genai` 経由で動かすには `.task` 形式への変換が必要（ONNX → LiteRT toolchain）。VibeKid Web アプリ側はこの adapter を直接利用していない（base model + system prompt 経路。本リポジトリは LoRA adapter 単体の技術検証 artifact として独立）。
 
-詳細は VibeKid repo の `docs/post-submission-litert-path.md` を参照。
+`transformers.js` + WebGPU + ONNX 経路 (`onnx-community/gemma-4-E2B-it-ONNX` ベース) は、merge 済 weight 配信で web 推論を実装可能。VibeKid writeup の Future Work #2 を参照。
 
 ## Limitations
 
@@ -312,7 +312,7 @@ Google DeepMind. Gemma 4 (`google/gemma-4-E2B-it`).
 ### Synthesis pipeline
 
 - [OpenRouter](https://openrouter.ai/) → `gemini-2.5-flash` で訓練データ合成 (757 件、4/17-18 確定)
-- 合成 meta-prompt: `sft/meta-prompt.template.md` (talk-sample dev repo 内、本 release には未同梱)
+- 合成 meta-prompt は本 release には未同梱 (上流開発リポジトリで管理)
 
 ## License
 
