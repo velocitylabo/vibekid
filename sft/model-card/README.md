@@ -208,7 +208,7 @@ text-only データを Gemma 4 default collator に通すと `mm_token_type_ids`
 - 原因: base model `unsloth/gemma-4-E2B-it` が 5/4-5 に re-upload された (Unsloth HF org 通常更新) ため、unpinned base で挙動が微妙にシフト
 - **完全 deterministic 再現**には kaggle-bench `BASE_REVISION = "f0c5915f17"` を使用 (現 source は base path のみ pin、LoRA path は adapter_config 経路で base SHA 未 pin、Future Work)
 
-判官が re-run する場合、aggregate 数値は再現する想定。per-prompt 内訳は base model の HF Hub 状態で揺らぐ可能性あり。
+再現実験で re-run する場合、aggregate 数値は再現する想定。per-prompt 内訳は base model の HF Hub 状態で揺らぐ可能性あり。
 
 ### Training data 設計
 
