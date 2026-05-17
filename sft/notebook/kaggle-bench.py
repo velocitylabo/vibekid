@@ -14,27 +14,27 @@
 # https://kaggle.com/code/danielhanchen/gemma4-31b-unsloth
 #
 # Modifications: model swap (31B → E2B `unsloth/gemma-4-E2B-it`)、bench harness
-# (TTFT / decode tok/s / total ms) 追加、3 軸 ablation runner、Web (#127) との対比表。
+# (TTFT / decode tok/s / total ms) 追加、3 軸 ablation runner、Web 計測との対比表。
 # Training セクションは削除 (本 notebook は bench 専用、訓練は `sft/notebook/sft-gemma4-e2b.py`)。
 #
-# ## 目的（#134）
+# ## 目的
 #
 # 単一 Kaggle Notebook で「Run All」実行可能な Gemma 4 E2B bench を提供する。
 # 閲覧者が Kaggle 環境で 1 click 実走できることが価値。
 #
 # ## Web bench との関係（重要）
 #
-# `#124` / `#127` の bench は **ブラウザ + WebGPU + LiteRT (`@mediapipe/tasks-genai`)**
+# Web bench は **ブラウザ + WebGPU + LiteRT (`@mediapipe/tasks-genai`)**
 # で計測した Web 経路の数値。本 notebook は Python + Unsloth + T4 GPU 経路で
 # 計測するため数値は直接比較不可。**Kaggle Notebook は別 backend での再現可能性
-# を確保するもの**で、Web 数値は `#127` のベンチログを参照する。
+# を確保するもの**で、Web 数値は別途公開している Web bench ログを参照する。
 #
 # 列名は Web 版（TTFT / decode tok/s / output chars）と整合させ、対比表で並べる。
 #
 # ## ablation
 #
-# 元の `#126` 案にあった「Alpine reactivity ablation」は Web frontend 固有のため
-# Kaggle に移植不可。代わりに以下 3 ablation:
+# Web frontend 固有の ablation (Alpine reactivity 等) は Kaggle に移植不可。
+# 代わりに以下 3 ablation を Notebook 経路で計測:
 #
 # 1. **prompt length**: short / normal / long
 # 2. **oneshot**: system prompt に few-shot example を含めるか否か
@@ -192,8 +192,8 @@ def load_model(use_lora: bool):
 # - `TextIteratorStreamer` で token を 1 つずつ受ける
 # - 最初の token で TTFT 計測
 # - 全 token の wall clock を accumulate して decode tok/s 算出
-# - 各 prompt × ablation で n=3 runs 取って中央値を採用（Gemma 4 は決定論的なので分散小、
-#   memory `feedback_gemma_determinism.md`）
+# - 各 prompt × ablation で n=3 runs 取って中央値を採用（Gemma 4 + LiteRT は seed 固定で
+#   byte-level 一致するため分散小）
 #
 # 公式推論 hyperparameter (Unsloth Notebook より): `temperature=1.0, top_p=0.95, top_k=64`
 
@@ -311,7 +311,7 @@ def run_bench(
 # ## 5. Prompt セット
 #
 # Web 版 4 preset と同じ意味カバレッジ（action / visual / interactive）を踏襲。
-# 文言は VibeKid Web app `app.js` の `presets` (#143 で ⭐ 除外、計 4 件) と同期。
+# 文言は VibeKid Web app `app.js` の `presets` (⭐ 除外、計 4 件) と同期。
 #
 # prompt length ablation は `neko` をベースに short / normal / long の 3 variant を用意。
 
@@ -333,8 +333,8 @@ PROMPTS_BY_LENGTH = {
 # ## 6. System prompt 2 variants
 #
 # - **oneshot**: `app.js` `_systemPrompt()` 全文 (V1 prompt rules 適用済 / db873a4)。
-#   one-shot example (gravity ball) + rules。memory `feedback_gemma_oneshot_turns.md` で
-#   two-shot は 2B が collapse することを確認、one-shot に固定。
+#   one-shot example (gravity ball) + rules。two-shot は 2B 系で collapse することを
+#   確認したため、one-shot に固定。
 # - **bare**: 最小指示のみ。example も rules もない baseline、context engineering の効果を切り分ける。
 #
 # **同期**: app.js V1 prompt と一致。app.js 側で更新があったら本セルも手動同期。
@@ -407,8 +407,8 @@ SYSTEM_PROMPTS = {
 # 「base load → 全 prompt × oneshot × runs → unload → SFT load → 同 → unload」の 2 phase。
 #
 # 規模: 2 (lora) × 2 (oneshot) × (3 length + 4 preset = 7) × n_runs
-# = `n_runs=3` で 84 runs ~ 14 分（10s/run 想定）。Gemma 4 は決定論的なので n=3 で充分
-# （memory `feedback_gemma_determinism.md`）。
+# = `n_runs=3` で 84 runs ~ 14 分（10s/run 想定）。Gemma 4 + LiteRT は seed 固定で
+# byte-level 一致するため n=3 で充分。
 
 # %%
 import gc
@@ -535,13 +535,12 @@ plt.show()
 # %% [markdown]
 # ## 9. Web 版との対比表
 #
-# `#127` Web bench（Windows 11 + RTX 2060 Mobile + LiteRT）と Python + Kaggle T4 を
+# Web bench（Windows 11 + RTX 2060 Mobile + LiteRT）と Python + Kaggle T4 を
 # 並べる。**数値は直接比較不可** (GPU 世代 / runtime / quantization 差) だが、
 # decode tok/s の桁感と TTFT の桁感を確認する用途。
 
 # %%
-# memory `project_windows_app_perf_gap.md` 4/22 LiteRT rollback 後 + memory `extract_nested_fence` 4/25
-# Windows 5×5 runs より。Web 版の数値は `tools/cdp-sampling.mjs` 出力の中央値ベース。
+# Web 版の数値は `tools/cdp-sampling.mjs` 出力の中央値ベース (Windows 5×5 runs)。
 WEB_REFERENCE = {
     "neko":   {"ttft_ms": 606, "decode_tok_s": 30.0},
     "ball":   {"ttft_ms": 674, "decode_tok_s": 30.0},
@@ -574,23 +573,23 @@ df_compare
 # - **Base model**: `unsloth/gemma-4-E2B-it`（4-bit 量子化済、gated 承認は `google/gemma-4-E2B-it` 側）
 # - **LoRA adapter**: `velocitylabo/vibekid-gemma-4-E2B-lora-phase4`（HF Hub public、Phase 4 / QLoRA r=16 α=32、3 epoch、eval_loss 6.34→3.05、cap 14%）
 # - **数値の解釈**: Python + T4 + 4-bit quant の値。Web 版（LiteRT + WebGPU + Windows）
-#   とは直接比較不可、`#127` を参照
+#   とは直接比較不可、Web bench ログを別途参照
 # - **再現コマンド**: Kaggle で本 notebook を fork → "Run All"
 #
 # ## 既知の Caveats
 #
-# - Gemma 4 multimodal 層の `merged_4bit_forced` 経路は使わない（memory `project_modal_merge_dry_run.md`
-#   参照、Colab で `NotImplementedError` 既知）。本 notebook は base + LoRA を 4-bit
+# - Gemma 4 multimodal 層の `merged_4bit_forced` 経路は使わない（Colab で
+#   `NotImplementedError` 既知）。本 notebook は base + LoRA を 4-bit
 #   ロード後に直接 generate するだけで merge は走らせない。
 # - T4 は bf16 native 非対応（CC 7.5）。`torch.bfloat16` 強制は activation overflow を
 #   起こすので `dtype=None` で Unsloth に float16 fallback させる。
 # - Gemma 4 の `chat_template.jinja` は transformers 5.6.x 系で同梱されない場合がある
 #   （[issue #45205](https://github.com/huggingface/transformers/issues/45205)）。
 #   Unsloth が吸収するので本 notebook では明示対応不要。
-# - 本 notebook は Web bench (#127) と数値直接比較不可、ablation の **相対** 効果のみを論じる。
+# - 本 notebook は Web bench と数値直接比較不可、ablation の **相対** 効果のみを論じる。
 
 # %% [markdown]
-# ## 11. Writeup 用詳細分析（#172）
+# ## 11. Writeup 用詳細分析
 #
 # Section 8 の集計を writeup の Methodology / Results 節で使える粒度に拡張する。
 # 4 つのサブ分析:
@@ -702,7 +701,7 @@ print("[11d-bad] base + bare の cap 到達例")
 df_bad
 
 # %% [markdown]
-# ## 12. Writeup artifact export（#172）
+# ## 12. Writeup artifact export
 #
 # Kaggle Notebook の Output に CSV / png を書き出して、writeup ドラフト側で
 # プレースホルダ数字を実数で埋められるようにする。

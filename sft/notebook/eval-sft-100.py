@@ -9,9 +9,9 @@
 # ---
 
 # %% [markdown]
-# # SFT 100 件 eval — self-contained (HF Hub direct load) — #163 / C-4
+# # VibeKid — SFT 100-prompt eval (self-contained, HF Hub direct load)
 #
-# 目的: vibekid SFT (Phase 4) を **HF Hub から直接 load** + 100 件 eval set で deterministic generate。
+# 目的: VibeKid SFT (Phase 4) を **HF Hub から直接 load** + 100 件 eval set で deterministic generate。
 # 出力 JSON をローカル `node sft/scripts/validate-results.mjs` (Playwright) で execute → exec_success_rate 計算。
 #
 # **Self-contained**: 訓練不要、Drive / Kaggle Dataset セットアップ不要。
@@ -20,11 +20,11 @@
 # **環境**: Colab (推奨、T4/A100 どちらでも) or Kaggle T4 で動く。
 # wall clock: T4 で ~50min、A100 で ~15-20min (100 件 × ~30s/prompt or ~10s/prompt)。
 #
-# **#163 C-4 経路詳細**:
-# - Web 経路 (LiteRT) は Gemma 4 LoRA 公式未対応 (#129) のため Notebook 経路で代替計測
+# **経路詳細**:
+# - Web 経路 (LiteRT) は Gemma 4 LoRA 公式未対応のため Notebook 経路で代替計測
 # - validate ロジックは `sft/eval-validate-runner.html` で `sft/eval-runner.html` (Web baseline 計測) と同一実装
 # - system prompt は production 経路と同じ **app-oneshot** (`sft/eval-runner.html` SYSTEM_PROMPTS['app-oneshot'] と一致)
-# - eval set 100 件は `sft/data/eval.jsonl` と一致 (本 notebook に inline embed、DRY 違反だが self-contained 優先)
+# - eval set 100 件は上流開発リポジトリの `sft/data/eval.jsonl` と一致 (本 notebook に inline embed、DRY 違反だが self-contained 優先)
 
 # %% [markdown]
 # ## 1. dependencies install (Phase 4 SFT と同じ pin)
@@ -35,8 +35,8 @@
 # %% [markdown]
 # ## 2. HF Hub から adapter direct load
 #
-# memory `project_external_research_findings.md` Section 8 経路。training を skip して
-# adapter (Phase 4 で push 済) を直接 load、~30-60s で inference 準備完了。
+# training を skip して adapter (Phase 4 で push 済) を直接 load、~30-60s で inference
+# 準備完了。
 
 # %%
 from unsloth import FastModel
@@ -94,7 +94,7 @@ function draw() {
 同じスタイルで、指示されたものを作ってください:"""
 
 # %% [markdown]
-# ## 3b. eval prompts inline (talk-sample sft/data/eval.jsonl と一致、100 件)
+# ## 3b. eval prompts inline (上流開発リポジトリの sft/data/eval.jsonl と一致、100 件)
 
 # %%
 import json
@@ -226,7 +226,7 @@ for idx, item in enumerate(EVAL_PROMPTS):
     out = model.generate(
         inputs,
         max_new_tokens=1024,
-        do_sample=False,  # deterministic (memory feedback_gemma_determinism.md)
+        do_sample=False,  # deterministic (Gemma 4 + LiteRT は seed 固定で byte-level 一致)
     )
     gen_secs = time.time() - t0
     raw_text = tokenizer.decode(out[0][inputs.shape[1]:], skip_special_tokens=True)
@@ -281,4 +281,4 @@ print(f"  n={len(results)}, mean_gen_secs={mean_gen:.2f}s")
 print(f"\n次:")
 print(f"  1. {OUT} をローカルに DL → sft/logs/eval_phase4_sft.json に配置")
 print(f"  2. node sft/scripts/validate-results.mjs --in=sft/logs/eval_phase4_sft.json")
-print(f"  3. SFT_SCORE 確定 → HF model card placeholder 埋め (#163 / C-4 Phase C)")
+print(f"  3. SFT_SCORE 確定 → HF model card placeholder 埋め")
