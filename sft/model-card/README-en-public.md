@@ -291,8 +291,13 @@ This SFT uses the former.
   [`sft/notebook/sft-gemma4-e2b.py`](https://github.com/velocitylabo/vibekid/blob/main/sft/notebook/sft-gemma4-e2b.py)
   (jupytext py:percent. To open in Colab, either run `jupytext --to ipynb`
   or upload directly).
-- **Kaggle mirror**: <!-- KAGGLE_NOTEBOOK_URL_PLACEHOLDER --> (T4
-  one-click reproduction).
+- **Kaggle bench (T4, 84-run ablation)**:
+  <!-- KAGGLE_NOTEBOOK_URL_PLACEHOLDER --> (re-runs base vs SFT × oneshot
+  vs bare × 7 prompts × 3 runs on T4; the reproducibility source for the
+  bench numbers in this model card and the writeup).
+- **Kaggle eval mirror (T4, SFT 100-prompt eval)**:
+  <!-- KAGGLE_EVAL_NOTEBOOK_URL_PLACEHOLDER --> (self-contained; loads the
+  adapter directly from the HF Hub and re-runs the 100-prompt eval on T4).
 - **Eval script**:
   [`sft/scripts/evaluate.mjs`](https://github.com/velocitylabo/vibekid/blob/main/sft/scripts/evaluate.mjs)
   (executes generated code via Playwright; 5-second heartbeat judgement).
