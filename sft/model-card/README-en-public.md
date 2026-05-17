@@ -292,9 +292,10 @@ This SFT uses the former.
   (jupytext py:percent. To open in Colab, either run `jupytext --to ipynb`
   or upload directly).
 - **Kaggle bench (T4, 84-run ablation)**:
-  <!-- KAGGLE_NOTEBOOK_URL_PLACEHOLDER --> (re-runs base vs SFT × oneshot
-  vs bare × 7 prompts × 3 runs on T4; the reproducibility source for the
-  bench numbers in this model card and the writeup).
+  https://www.kaggle.com/code/pirozhiki/vibekid-kaggle-bench-for-gemma-4-e2b-lora
+  (re-runs base vs SFT × oneshot vs bare × 7 prompts × 3 runs on T4;
+  the reproducibility source for the bench numbers in this model card
+  and the writeup).
 - **Kaggle eval mirror (T4, SFT 100-prompt eval)**:
   <!-- KAGGLE_EVAL_NOTEBOOK_URL_PLACEHOLDER --> (self-contained; loads the
   adapter directly from the HF Hub and re-runs the 100-prompt eval on T4).

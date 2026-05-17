@@ -185,7 +185,7 @@ text-only データを Gemma 4 default collator に通すと `mm_token_type_ids`
 ## Reproducibility
 
 - **Training notebook**: [`sft/notebook/sft-gemma4-e2b.py`](https://github.com/velocitylabo/vibekid/blob/main/sft/notebook/sft-gemma4-e2b.py)（jupytext py:percent。Colab で開くには `jupytext --to ipynb` か直接 upload）
-- **Kaggle bench (T4, 84-run ablation)**: <!-- KAGGLE_NOTEBOOK_URL_PLACEHOLDER -->（base vs SFT × oneshot vs bare × 7 prompts × 3 runs を T4 で再走、本 model card および writeup の bench 数値の reproducibility source）
+- **Kaggle bench (T4, 84-run ablation)**: https://www.kaggle.com/code/pirozhiki/vibekid-kaggle-bench-for-gemma-4-e2b-lora （base vs SFT × oneshot vs bare × 7 prompts × 3 runs を T4 で再走、本 model card および writeup の bench 数値の reproducibility source）
 - **Kaggle eval mirror (T4, SFT 100-prompt eval)**: <!-- KAGGLE_EVAL_NOTEBOOK_URL_PLACEHOLDER -->（self-contained、HF Hub から adapter を直接 load して 100 件 eval を T4 で再走）
 - **Eval script**: [`sft/scripts/evaluate.mjs`](https://github.com/velocitylabo/vibekid/blob/main/sft/scripts/evaluate.mjs)（Playwright で生成コードを実行、5 秒 heartbeat 判定）
 - **Synthesis pipeline**: [`sft/scripts/build-prompt.mjs`](https://github.com/velocitylabo/vibekid/blob/main/sft/scripts/build-prompt.mjs)（OpenRouter 経由で Gemini 2.5 Flash を呼ぶ slot-filling meta-prompt）
